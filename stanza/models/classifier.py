@@ -33,6 +33,7 @@ class DevScoring(Enum):
     WEIGHTED_F1 = 'WF'
 
 logger = logging.getLogger('stanza')
+logging.getLogger('elmoformanylangs').setLevel(logging.WARNING)
 
 DEFAULT_TRAIN='extern_data/sentiment/sst-processed/fiveclass/train-phrases.txt'
 DEFAULT_DEV='extern_data/sentiment/sst-processed/fiveclass/dev-roots.txt'
@@ -169,6 +170,13 @@ def parse_args():
     parser.add_argument('--charlm_shorthand', type=str, default=None, help="Shorthand for character-level language model training corpus.")
     parser.add_argument('--charlm_projection', type=int, default=None, help="Project the charlm values to this dimension")
     parser.add_argument('--char_lowercase', dest='char_lowercase', action='store_true', help="Use lowercased characters in character model.")
+
+    parser.add_argument('--elmo_model', default='extern_data/manyelmo/english',
+                        help='Directory with elmo model')
+    parser.add_argument('--use_elmo', dest='use_elmo', default=False, action='store_true',
+                        help='Use an elmo model as a source of parameters')
+    parser.add_argument('--elmo_projection', type=int, default=None,
+                        help='Project elmo to this many dimensions')
 
     args = parser.parse_args()
 
@@ -580,6 +588,7 @@ def main():
         train_set = None
 
     pretrain = load_pretrain(args)
+    elmo_model = utils.load_elmo(args.elmo_model) if args.use_elmo else None
 
     if args.charlm:
         if args.charlm_shorthand is None:
@@ -594,7 +603,7 @@ def main():
         charmodel_backward = None
 
     if args.load_name:
-        model = cnn_classifier.load(args.load_name, pretrain,
+        model = cnn_classifier.load(args.load_name, pretrain, elmo_model,
                                     charmodel_forward, charmodel_backward)
     else:
         assert train_set is not None
@@ -603,6 +612,7 @@ def main():
         model = cnn_classifier.CNNClassifier(pretrain=pretrain,
                                              extra_vocab=extra_vocab,
                                              labels=labels,
+                                             elmo_model=elmo_model,
                                              charmodel_forward=charmodel_forward,
                                              charmodel_backward=charmodel_backward,
                                              args=args)
