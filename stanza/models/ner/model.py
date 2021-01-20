@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pack_sequence, PackedSequence
 
+from stanza.models.common import utils
 from stanza.models.common.packed_lstm import PackedLSTM
 from stanza.models.common.dropout import WordDropout, LockedDropout
 from stanza.models.common.char_model import CharacterModel, CharacterLanguageModel
@@ -42,6 +43,16 @@ class NERTagger(nn.Module):
                 self.charmodel = CharacterModel(args, vocab, bidirectional=True, attention=False)
                 input_size += self.args['char_hidden_dim'] * 2
 
+        if self.args['use_elmo']:
+            elmo_model = utils.load_elmo(args['elmo_model'])
+            add_unsaved_module('elmo_model', elmo_model)
+
+            self.elmo_dim = utils.elmo_dim(elmo_model)
+            input_size += self.elmo_dim
+
+            # this mapping will combine 3 layers of elmo to 1 layer of features
+            self.elmo_combine_layers = nn.Linear(in_features=3, out_features=1, bias=False)
+
         # optionally add a input transformation layer
         if self.args.get('input_transform', False):
             self.input_transform = nn.Linear(input_size, input_size)
@@ -77,8 +88,7 @@ class NERTagger(nn.Module):
             "Input embedding matrix must match size: {} x {}, found {}".format(vocab_size, dim, emb_matrix.size())
         self.word_emb.weight.data.copy_(emb_matrix)
 
-    def forward(self, word, word_mask, wordchars, wordchars_mask, tags, word_orig_idx, sentlens, wordlens, chars, charoffsets, charlens, char_orig_idx):
-        
+    def forward(self, word, word_mask, wordchars, wordchars_mask, tags, word_orig_idx, sentlens, wordlens, chars, charoffsets, charlens, char_orig_idx, text):
         def pack(x):
             return pack_padded_sequence(x, sentlens, batch_first=True)
         
@@ -102,6 +112,23 @@ class NERTagger(nn.Module):
                 char_reps = self.charmodel(wordchars, wordchars_mask, word_orig_idx, sentlens, wordlens)
                 char_reps = PackedSequence(char_reps.data, char_reps.batch_sizes)
                 inputs += [char_reps]
+
+        if self.args['use_elmo']:
+            elmo_arrays = self.elmo_model.sents2elmo(text, output_layer=-2)
+            device = next(self.parameters()).device
+            elmo_tensors = [torch.tensor(x) for x in elmo_arrays]
+            # 3 x TEXT x ELMO
+            elmo_tensor = torch.cat(elmo_tensors, dim=1).to(device=device)
+            #inputs += [elmo_tensor[0], elmo_tensor[1], elmo_tensor[2]]
+            # ELMO x TEXT x 3
+            elmo_tensor = torch.transpose(elmo_tensor, 0, 2)
+            # ELMO x TEXT x 1
+            elmo_tensor = self.elmo_combine_layers(elmo_tensor)
+            # ELMO x TEXT
+            elmo_tensor = elmo_tensor.squeeze(2)
+            # TEXT x ELMO
+            elmo_tensor = torch.transpose(elmo_tensor, 0, 1)
+            inputs += [elmo_tensor]
 
         lstm_inputs = torch.cat([x.data for x in inputs], 1)
         if self.args['word_dropout'] > 0:

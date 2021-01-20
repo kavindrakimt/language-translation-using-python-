@@ -65,6 +65,10 @@ def parse_args(args=None):
     parser.add_argument('--charlm_forward_file', type=str, default=None, help="Exact path to use for forward charlm")
     parser.add_argument('--charlm_backward_file', type=str, default=None, help="Exact path to use for backward charlm")
     parser.add_argument('--char_lowercase', dest='char_lowercase', action='store_true', help="Use lowercased characters in character model.")
+
+    parser.add_argument('--elmo_model', default='extern_data/manyelmo/english', help='Directory with elmo model')
+    parser.add_argument('--use_elmo', dest='use_elmo', default=False, action='store_true', help='Use an elmo model as a source of parameters')
+
     parser.add_argument('--no_lowercase', dest='lowercase', action='store_false', help="Use cased word vectors.")
     parser.add_argument('--no_emb_finetune', dest='emb_finetune', action='store_false', help="Turn off finetuning of the embedding matrix.")
     parser.add_argument('--no_input_transform', dest='input_transform', action='store_false', help="Do not use input transformation layer before tagger lstm.")
@@ -144,6 +148,9 @@ def train(args):
                 args['charlm_forward_file'] = '{}/{}_forward_charlm.pt'.format(args['charlm_save_dir'], args['charlm_shorthand'])
             if not args['charlm_backward_file']:
                 args['charlm_backward_file'] = '{}/{}_backward_charlm.pt'.format(args['charlm_save_dir'], args['charlm_shorthand'])
+
+        if args['use_elmo']:
+            utils.quiet_elmo()
 
     # load data
     logger.info("Loading data with batch size {}...".format(args['batch_size']))

@@ -80,6 +80,7 @@ class DataLoader:
             processed_sent = [vocab['word'].map([case(w[0]) for w in sent])]
             processed_sent += [[vocab['char'].map([char_case(x) for x in w[0]]) for w in sent]]
             processed_sent += [vocab['tag'].map([w[1] for w in sent])]
+            processed_sent += [[case(w[0]) for w in sent]]
             processed.append(processed_sent)
         return processed
 
@@ -95,7 +96,7 @@ class DataLoader:
         batch = self.data[key]
         batch_size = len(batch)
         batch = list(zip(*batch))
-        assert len(batch) == 3 # words: List[List[int]], chars: List[List[List[int]]], tags: List[List[int]]
+        assert len(batch) == 4 # words: List[List[int]], chars: List[List[List[int]]], tags: List[List[int]], text: List[List[String]]
 
         # sort sentences by lens for easy RNN operations
         sentlens = [len(x) for x in batch[0]]
@@ -126,7 +127,9 @@ class DataLoader:
         charoffsets = [charoffsets_forward, charoffsets_backward] # idx for forward and backward lm to get word representation
         tags = get_long_tensor(batch[2], batch_size)
 
-        return words, words_mask, wordchars, wordchars_mask, chars, tags, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets
+        text = batch[3]
+
+        return words, words_mask, wordchars, wordchars_mask, chars, tags, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets, text
 
     def __iter__(self):
         for i in range(self.__len__()):

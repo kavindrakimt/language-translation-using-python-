@@ -288,3 +288,11 @@ def load_elmo(elmo_model):
     elmo_model = elmoformanylangs.Embedder(elmo_model)
     return elmo_model
 
+def elmo_dim(elmo_model):
+    # TODO: the elmo package does not have a convenient way to get the dimension
+    return elmo_model.sents2elmo([["Test"]])[0].shape[1]
+
+def quiet_elmo():
+    # note that this does not need to be part of import elmo
+    # the HIT release of elmo is a bit noisy when running inference
+    logging.getLogger('elmoformanylangs').setLevel(logging.WARNING)

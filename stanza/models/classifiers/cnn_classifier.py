@@ -10,6 +10,7 @@ import torch.nn.functional as F
 
 import stanza.models.classifiers.classifier_args as classifier_args
 import stanza.models.classifiers.data as data
+from stanza.models.common import utils
 from stanza.models.common.vocab import PAD_ID, UNK_ID
 from stanza.models.common.data import get_long_tensor, sort_all
 from stanza.models.common.utils import split_into_batches, sort_with_indices, unsort
@@ -166,7 +167,7 @@ class CNNClassifier(nn.Module):
             # TODO: could precache elmo values for training
             if elmo_model is None:
                 raise ValueError("Model requires elmo, but elmo_model not passed in")
-            elmo_dim = elmo_model.sents2elmo([["Test"]])[0].shape[1]
+            elmo_dim = utils.elmo_dim(elmo_model)
 
             # this mapping will combine 3 layers of elmo to 1 layer of features
             self.elmo_combine_layers = nn.Linear(in_features=3, out_features=1, bias=False)

@@ -33,7 +33,7 @@ class DevScoring(Enum):
     WEIGHTED_F1 = 'WF'
 
 logger = logging.getLogger('stanza')
-logging.getLogger('elmoformanylangs').setLevel(logging.WARNING)
+utils.quiet_elmo()
 
 DEFAULT_TRAIN='extern_data/sentiment/sst-processed/fiveclass/train-phrases.txt'
 DEFAULT_DEV='extern_data/sentiment/sst-processed/fiveclass/dev-roots.txt'
