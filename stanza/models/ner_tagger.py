@@ -72,6 +72,7 @@ def parse_args(args=None):
     parser.add_argument('--no_lowercase', dest='lowercase', action='store_false', help="Use cased word vectors.")
     parser.add_argument('--no_emb_finetune', dest='emb_finetune', action='store_false', help="Turn off finetuning of the embedding matrix.")
     parser.add_argument('--no_input_transform', dest='input_transform', action='store_false', help="Do not use input transformation layer before tagger lstm.")
+    parser.add_argument('--input_transform_size', type=int, default=None, help='What size input transform to use')
     parser.add_argument('--scheme', type=str, default='bioes', help="The tagging scheme to use: bio or bioes.")
 
     parser.add_argument('--sample_train', type=float, default=1.0, help='Subsample training data.')

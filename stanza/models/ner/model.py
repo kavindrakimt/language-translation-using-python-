@@ -55,7 +55,9 @@ class NERTagger(nn.Module):
 
         # optionally add a input transformation layer
         if self.args.get('input_transform', False):
-            self.input_transform = nn.Linear(input_size, input_size)
+            transform_size = args.get('input_transform_size', input_size)
+            self.input_transform = nn.Linear(input_size, transform_size)
+            input_size = transform_size
         else:
             self.input_transform = None
        
