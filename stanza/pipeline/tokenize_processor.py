@@ -5,7 +5,10 @@ Processor for performing tokenization
 import io
 import logging
 
+from torch.utils.data import DataLoader as TorchDataLoader
+
 from stanza.models.tokenization.data import DataLoader, NEWLINE_WHITESPACE_RE
+from stanza.models.tokenization.torch_data import TokenizerDataset
 from stanza.models.tokenization.trainer import Trainer
 from stanza.models.tokenization.utils import output_predictions
 from stanza.pipeline._constants import *
@@ -13,6 +16,10 @@ from stanza.pipeline.processor import UDProcessor, register_processor
 from stanza.pipeline.registry import PROCESSOR_VARIANTS
 from stanza.utils.datasets.postprocess_vietnamese_tokenizer_data import paras_to_chunks
 from stanza.models.common import doc
+from tqdm import tqdm
+
+
+# these imports trigger the "register_variant" decorations
 from stanza.pipeline.external.jieba import JiebaTokenizer
 from stanza.pipeline.external.spacy import SpacyTokenizer
 from stanza.pipeline.external.sudachipy import SudachiPyTokenizer
@@ -92,6 +99,7 @@ class TokenizeProcessor(UDProcessor):
                                                self.config.get('max_seqlen', TokenizeProcessor.MAX_SEQ_LENGTH_DEFAULT),
                                                orig_text=raw_text,
                                                no_ssplit=self.config.get('no_ssplit', False))
+
         return doc.Document(document, raw_text)
 
     def bulk_process(self, docs):
@@ -110,8 +118,22 @@ class TokenizeProcessor(UDProcessor):
                 res.append(doc.Document(document, raw_text))
             return res
 
+        dataset = TokenizerDataset(docs, self.config, self.vocab)
+        dataset = TorchDataLoader(dataset, batch_size=None, num_workers=8)
+        combined_data = []
+        combined_sentences = []
+        for data, sentences in tqdm(dataset):
+            combined_data.extend(data)
+            combined_sentences.extend(sentences)
+
         combined_text = '\n\n'.join([thisdoc.text for thisdoc in docs])
-        processed_combined = self.process(doc.Document([], text=combined_text))
+
+        batches = DataLoader(self.config, input_data=combined_data, vocab=self.vocab, evaluation=True, sentences=combined_sentences)
+        _, _, _, document = output_predictions(None, self.trainer, batches, self.vocab, None,
+                                               self.config.get('max_seqlen', TokenizeProcessor.MAX_SEQ_LENGTH_DEFAULT),
+                                               orig_text=combined_text,
+                                               no_ssplit=self.config.get('no_ssplit', False))
+        processed_combined = doc.Document(document, combined_text)
 
         # postprocess sentences and tokens to reset back pointers and char offsets
         charoffset = 0

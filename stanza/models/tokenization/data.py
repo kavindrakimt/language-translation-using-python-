@@ -28,7 +28,7 @@ WHITESPACE_RE = re.compile(r'\s')
 
 
 class DataLoader:
-    def __init__(self, args, input_files={'json': None, 'txt': None, 'label': None}, input_text=None, input_data=None, vocab=None, evaluation=False):
+    def __init__(self, args, input_files={'json': None, 'txt': None, 'label': None}, input_text=None, input_data=None, vocab=None, evaluation=False, sentences=None):
         self.args = args
         self.eval = evaluation
 
@@ -63,16 +63,19 @@ class DataLoader:
                           for char, label in zip(pt.rstrip(), pc) if not (skip_newline and char == '\n')] # check if newline needs to be eaten
                          for pt, pc in zip(NEWLINE_WHITESPACE_RE.split(text), NEWLINE_WHITESPACE_RE.split(labels)) if len(pt.rstrip()) > 0]
 
-        # remove consecutive whitespaces
-        self.data = [filter_consecutive_whitespaces(x) for x in self.data]
-
         self.vocab = vocab if vocab is not None else self.init_vocab()
 
-        # data comes in a list of paragraphs, where each paragraph is a list of units with unit-level labels.
-        # At evaluation time, each paragraph is treated as single "sentence" as we don't know a priori where
-        # sentence breaks occur. We make prediction from left to right for each paragraph and move forward to
-        # the last predicted sentence break to start afresh.
-        self.sentences = [self.para_to_sentences(para) for para in self.data]
+        if sentences:
+            self.sentences = sentences
+        else:
+            # remove consecutive whitespaces
+            self.data = [filter_consecutive_whitespaces(x) for x in self.data]
+
+            # data comes in a list of paragraphs, where each paragraph is a list of units with unit-level labels
+            # At evaluation time, each paragraph is treated as single "sentence" as we don't know a priori where
+            # sentence breaks occur. We make prediction from left to right for each paragraph and move forward to
+            # the last predicted sentence break to start afresh.
+            self.sentences = [self.para_to_sentences(para) for para in self.data]
 
         self.init_sent_ids()
         logger.debug(f"{len(self.sentence_ids)} sentences loaded.")
