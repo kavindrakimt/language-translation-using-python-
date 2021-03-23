@@ -19,6 +19,7 @@ def condense_data(data):
 
 def condense_sentences(sentences):
     # TODO: send back numpy arrays, perhaps with pin_memory=True or by changing the collate_fn
+    # pin_memory=True seems to slow things down enormously
     new_sentences = [[(sentence[0][0],
                        sentence[0][2])] for sentence in sentences]
     return new_sentences
