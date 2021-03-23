@@ -102,8 +102,11 @@ class TokenizeProcessor(UDProcessor):
 
         return doc.Document(document, raw_text)
 
-    def process_bulk_sentence(self, sentence):
-        return [[s[0], [0] * len(s[0]), s[1], s[2]] for s in sentence]
+    def process_bulk_sentence(self, sentence, chunk):
+        if len(sentence) > 1:
+            raise ValueError("Was not expecting to process more than one sentence per paragraph via this method")
+        s = sentence[0]
+        return [[s[0], [0] * len(s[0]), s[1], [c for c in chunk]]]
 
     def combine_bulk_data(self, docs):
         dataset = TokenizerDataset(docs, self.config, self.vocab)
@@ -114,7 +117,7 @@ class TokenizeProcessor(UDProcessor):
             processed_data = [[(i, 0) for i in chunk]
                               for chunk in data]
             combined_data.extend(processed_data)
-            processed_sentences = [self.process_bulk_sentence(sentence) for sentence in sentences]
+            processed_sentences = [self.process_bulk_sentence(sentence, chunk) for sentence, chunk in zip(sentences, data)]
             combined_sentences.extend(processed_sentences)
 
         return combined_data, combined_sentences
