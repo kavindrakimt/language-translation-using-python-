@@ -16,12 +16,11 @@ def condense_data(data):
     return new_data
 
 def condense_sentences(sentences):
-    #new_sentences = [[(np.array(sentence[0][0]),
-    #                   np.array(sentence[0][1]),
-    #                   np.array(sentence[0][2]),
-    #                   sentence[0][3])] for sentence in sentences]
-    #return new_sentences
-    return sentences
+    # TODO: send back numpy arrays, perhaps with pin_memory=True or by changing the collate_fn
+    new_sentences = [[(sentence[0][0],
+                       sentence[0][2],
+                       sentence[0][3])] for sentence in sentences]
+    return new_sentences
 
 class TokenizerDataset(Dataset):
     def __init__(self, docs, config, vocab):

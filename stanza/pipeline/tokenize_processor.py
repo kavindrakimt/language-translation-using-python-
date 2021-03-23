@@ -102,6 +102,9 @@ class TokenizeProcessor(UDProcessor):
 
         return doc.Document(document, raw_text)
 
+    def process_bulk_sentence(self, sentence):
+        return [[s[0], [0] * len(s[0]), s[1], s[2]] for s in sentence]
+
     def combine_bulk_data(self, docs):
         dataset = TokenizerDataset(docs, self.config, self.vocab)
         dataset = TorchDataLoader(dataset, batch_size=None, num_workers=8)
@@ -111,7 +114,8 @@ class TokenizeProcessor(UDProcessor):
             processed_data = [[(i, 0) for i in chunk]
                               for chunk in data]
             combined_data.extend(processed_data)
-            combined_sentences.extend(sentences)
+            processed_sentences = [self.process_bulk_sentence(sentence) for sentence in sentences]
+            combined_sentences.extend(processed_sentences)
 
         return combined_data, combined_sentences
 
