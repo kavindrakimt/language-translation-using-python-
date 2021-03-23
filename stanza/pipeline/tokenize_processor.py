@@ -102,6 +102,17 @@ class TokenizeProcessor(UDProcessor):
 
         return doc.Document(document, raw_text)
 
+    def combine_bulk_data(self, docs):
+        dataset = TokenizerDataset(docs, self.config, self.vocab)
+        dataset = TorchDataLoader(dataset, batch_size=None, num_workers=8)
+        combined_data = []
+        combined_sentences = []
+        for data, sentences in tqdm(dataset):
+            combined_data.extend(data)
+            combined_sentences.extend(sentences)
+
+        return combined_data, combined_sentences
+
     def bulk_process(self, docs):
         """
         The tokenizer cannot use UDProcessor's sentence-level cross-document batching interface, and requires special handling.
@@ -118,13 +129,7 @@ class TokenizeProcessor(UDProcessor):
                 res.append(doc.Document(document, raw_text))
             return res
 
-        dataset = TokenizerDataset(docs, self.config, self.vocab)
-        dataset = TorchDataLoader(dataset, batch_size=None, num_workers=8)
-        combined_data = []
-        combined_sentences = []
-        for data, sentences in tqdm(dataset):
-            combined_data.extend(data)
-            combined_sentences.extend(sentences)
+        combined_data, combined_sentences = self.combine_bulk_data(docs)
 
         combined_text = '\n\n'.join([thisdoc.text for thisdoc in docs])
 
