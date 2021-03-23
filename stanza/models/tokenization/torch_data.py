@@ -3,6 +3,17 @@ from stanza.models.tokenization.data import DataLoader
 import torch
 
 
+def condense_data(data):
+    new_data = []
+    for sentence in data:
+        units = [w[0] for w in sentence]
+        if all(len(unit) == 1 for unit in units):
+            new_data.append("".join(units))
+        else:
+            new_data.append(units)
+    return new_data
+
+
 class TokenizerDataset(Dataset):
     def __init__(self, docs, config, vocab):
         self.docs = docs
@@ -17,6 +28,7 @@ class TokenizerDataset(Dataset):
         doc = self.docs[index]
         text = doc.text
 
-        d = DataLoader(self.config, input_text=text, vocab=self.vocab, evaluation=True)
-        return d.data, d.sentences
+        loader = DataLoader(self.config, input_text=text, vocab=self.vocab, evaluation=True)
+        data = condense_data(loader.data)
+        return data, loader.sentences
 

@@ -108,7 +108,9 @@ class TokenizeProcessor(UDProcessor):
         combined_data = []
         combined_sentences = []
         for data, sentences in tqdm(dataset):
-            combined_data.extend(data)
+            processed_data = [[(i, 0) for i in chunk]
+                              for chunk in data]
+            combined_data.extend(processed_data)
             combined_sentences.extend(sentences)
 
         return combined_data, combined_sentences
