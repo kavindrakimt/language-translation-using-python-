@@ -145,12 +145,14 @@ def output_predictions_pytorch(output_file, trainer, data_generator, vocab, mwt_
     data_generator.dataset.unit_dropout = 0.0 #???
 
     for i, batch in enumerate(data_generator):
+        """batch is the return value from get_item automatically iterating over all data in PyDataset"""
 
         units = batch[0][0]
         labels = batch[1][0]
         features = batch[2][0]
         raw_units = batch[3]
 
+        """We need to reshape the batch to [4, batchsize, ???]"""
         batch = (batch[0][0], batch[1][0], batch[2][0], batch[3])
 
         """We get the batches directly from the pytoch dataset"""
@@ -218,6 +220,7 @@ def output_predictions_pytorch(output_file, trainer, data_generator, vocab, mwt_
         data_generator.dataset.old_batch = None  # ???
         data_generator.dataset.unit_dropout = 0.0  # ???
 
+    """Postprocessing does not work for now"""
     return None, None, None, None
 
 
@@ -366,6 +369,8 @@ def output_predictions(output_file, trainer, data_generator, vocab, mwt_dict, ma
             else:
                 all_preds[p[0]] = pred[j][:len1]
             all_raw[p[0]] = raw[j]
+
+    return None, None, None, None
 
     offset = 0
     oov_count = 0

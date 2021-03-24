@@ -126,14 +126,14 @@ class TokenizeProcessor(UDProcessor):
         """batches is now a torch dataloader"""
         pydataset = PyDataset(self.config, input_data=combined_data, vocab=self.vocab, evaluation=True,
                               sentences=combined_sentences)
-        print(len(pydataset))
+        """batch_size must be 1 as get_item is using the same logic as next() and next is already batching"""
         dloader = Torchdataloader(pydataset, batch_size=1, num_workers=8)
-        #_, _, _, document = output_predictions_pytorch(None, self.trainer, dloader, self.vocab, None,
-        #                                               self.config.get('max_seqlen', TokenizeProcessor.MAX_SEQ_LENGTH_DEFAULT),
-        #                                               orig_text=combined_text,
-        #                                               no_ssplit=self.config.get('no_ssplit', False))
+        _, _, _, document = output_predictions_pytorch(None, self.trainer, dloader, self.vocab, None,
+                                                       self.config.get('max_seqlen', TokenizeProcessor.MAX_SEQ_LENGTH_DEFAULT),
+                                                       orig_text=combined_text,
+                                                       no_ssplit=self.config.get('no_ssplit', False))
 
-        #return []
+        return document
 
 
         """Old Version"""
@@ -143,6 +143,9 @@ class TokenizeProcessor(UDProcessor):
                                                                        TokenizeProcessor.MAX_SEQ_LENGTH_DEFAULT),
                                                        orig_text=combined_text,
                                                        no_ssplit=self.config.get('no_ssplit', False))
+
+        return document
+
         processed_combined = doc.Document(document, combined_text)
 
         # postprocess sentences and tokens to reset back pointers and char offsets
