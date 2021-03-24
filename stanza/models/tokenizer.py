@@ -16,7 +16,7 @@ import torch
 from stanza.models.common import utils
 from stanza.models.tokenization.trainer import Trainer
 from stanza.models.tokenization.data import DataLoader
-from stanza.models.tokenization.utils import load_mwt_dict, eval_model, output_predictions
+from stanza.models.tokenization.utils import load_mwt_dict, eval_model, output_predictions_pytorch
 from stanza.models import _training_logging
 
 logger = logging.getLogger('stanza')
@@ -195,7 +195,7 @@ def evaluate(args):
 
     batches = DataLoader(args, input_files=eval_input_files, vocab=vocab, evaluation=True)
 
-    oov_count, N, _, _ = output_predictions(args['conll_file'], trainer, batches, vocab, mwt_dict, args['max_seqlen'])
+    oov_count, N, _, _ = output_predictions_pytorch(args['conll_file'], trainer, batches, vocab, mwt_dict, args['max_seqlen'])
 
     logger.info("OOV rate: {:6.3f}% ({:6d}/{:6d})".format(oov_count / N * 100, oov_count, N))
 

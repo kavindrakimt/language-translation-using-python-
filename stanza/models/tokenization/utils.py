@@ -5,6 +5,8 @@ import numpy as np
 import re
 import logging
 
+from pandas.tests.extension.conftest import data
+
 from stanza.models.common.utils import ud_scores, harmonic_mean
 from stanza.utils.conll import CoNLL
 from stanza.models.common.doc import *
@@ -112,6 +114,182 @@ def update_pred_regex(raw, pred):
 SPACE_RE = re.compile(r'\s')
 SPACE_SPLIT_RE = re.compile(r'( *[^ ]+)')
 
+
+"""Pytorch version"""
+def output_predictions_pytorch(output_file, trainer, data_generator, vocab, mwt_dict, max_seqlen=1000, orig_text=None, no_ssplit=False, use_regex_tokens=True):
+    paragraphs = []
+    for i, p in enumerate(data_generator.dataset.sentences):
+        start = 0 if i == 0 else paragraphs[-1][2]
+        length = sum([len(x[0]) for x in p])
+        paragraphs += [(i, start, start+length, length)] # para idx, start idx, end idx, length
+
+    paragraphs = list(sorted(paragraphs, key=lambda x: x[3], reverse=True))
+
+    all_preds = [None] * len(paragraphs)
+    all_raw = [None] * len(paragraphs)
+
+    eval_limit = max(3000, max_seqlen)
+
+    batch_size = trainer.args['batch_size']
+    skip_newline = trainer.args['skip_newline']
+
+    #batches = int((len(paragraphs) + batch_size - 1) / batch_size)
+
+    """Do this once before obtaining the values from get_item()"""
+    batchparas = paragraphs[0 * batch_size: (0 + 1) * batch_size]
+    offsets = [x[1] for x in batchparas]
+
+    """First, pass the values to the dataset class that were used before as parameters in next()"""
+    data_generator.dataset.eval_offsets = offsets
+    data_generator.dataset.old_batch = None #???
+    data_generator.dataset.unit_dropout = 0.0 #???
+
+    for i, batch in enumerate(data_generator):
+
+        units = batch[0][0]
+        labels = batch[1][0]
+        features = batch[2][0]
+        raw_units = batch[3]
+
+        batch = (batch[0][0], batch[1][0], batch[2][0], batch[3])
+
+        """We get the batches directly from the pytoch dataset"""
+        #batch = data_generator.next(eval_offsets=offsets)
+        raw = batch[3]
+
+        N = len(batch[3][0])
+        if N <= eval_limit:
+            pred = np.argmax(trainer.predict(batch), axis=2)
+        else:
+            idx = [0] * len(batchparas)
+            adv = [0] * len(batchparas)
+            Ns = [p[3] for p in batchparas]
+            pred = [[] for _ in batchparas]
+            while True:
+                ens = [min(N - idx1, eval_limit) for idx1, N in zip(idx, Ns)]
+                en = max(ens)
+                batch1 = batch[0][:, :en], batch[1][:, :en], batch[2][:, :en], [x[:en] for x in batch[3]]
+                pred1 = np.argmax(trainer.predict(batch1), axis=2)
+
+                for j in range(len(batchparas)):
+                    sentbreaks = np.where((pred1[j] == 2) + (pred1[j] == 4))[0]
+                    if len(sentbreaks) <= 0 or idx[j] >= Ns[j] - eval_limit:
+                        advance = ens[j]
+                    else:
+                        advance = np.max(sentbreaks) + 1
+
+                    pred[j] += [pred1[j, :advance]]
+                    idx[j] += advance
+                    adv[j] = advance
+
+                if all([idx1 >= N for idx1, N in zip(idx, Ns)]):
+                    break
+                # once we've made predictions on a certain number of characters for each paragraph (recorded in `adv`),
+                # we skip the first `adv` characters to make the updated batch
+                #batch = data_generator.next(eval_offsets=adv, old_batch=batch)
+                data_generator.dataset.eval_offset = adv
+                data_generator.dataset.old_batch = batch
+
+            pred = [np.concatenate(p, 0) for p in pred]
+
+
+        """
+        for j, p in enumerate(batchparas):
+            len1 = len([1 for x in raw[j] if x != '<PAD>'])
+            if pred[j][len1-1] < 2:
+                pred[j][len1-1] = 2
+            elif pred[j][len1-1] > 2:
+                pred[j][len1-1] = 4
+            if use_regex_tokens:
+                all_preds[p[0]] = update_pred_regex(raw[j], pred[j][:len1])
+            else:
+                all_preds[p[0]] = pred[j][:len1]
+            all_raw[p[0]] = raw[j]
+        """
+
+        # At evaluation time, each paragraph is treated as a single "sentence", and a batch of `batch_size` paragraphs
+        # are tokenized together. `offsets` here are used by the data generator to identify which paragraphs to use
+        # for the next batch of evaluation.
+        batchparas = paragraphs[(i + 1) * batch_size: (i + 2) * batch_size]
+        offsets = [x[1] for x in batchparas]
+
+        """Update those parameters for the next batch"""
+        data_generator.dataset.eval_offsets = offsets
+        data_generator.dataset.old_batch = None  # ???
+        data_generator.dataset.unit_dropout = 0.0  # ???
+
+    return None, None, None, None
+
+
+    offset = 0
+    oov_count = 0
+    doc = []
+
+    text = SPACE_RE.sub(' ', orig_text) if orig_text is not None else None
+    char_offset = 0
+    use_la_ittb_shorthand = trainer.args['shorthand'] == 'la_ittb'
+
+    # Once everything is fed through the tokenizer model, it's time to decode the predictions
+    # into actual tokens and sentences that the rest of the pipeline uses
+    for j in range(len(paragraphs)):
+        raw = all_raw[j]
+        pred = all_preds[j]
+
+        current_tok = ''
+        current_sent = []
+
+        for t, p in zip(raw, pred):
+            if t == '<PAD>':
+                break
+            # hack la_ittb
+            if use_la_ittb_shorthand and t in (":", ";"):
+                p = 2
+            offset += 1
+            if vocab.unit2id(t) == vocab.unit2id('<UNK>'):
+                oov_count += 1
+
+            current_tok += t
+            if p >= 1:
+                tok = vocab.normalize_token(current_tok)
+                assert '\t' not in tok, tok
+                if len(tok) <= 0:
+                    current_tok = ''
+                    continue
+                if orig_text is not None:
+                    st = -1
+                    tok_len = 0
+                    for part in SPACE_SPLIT_RE.split(current_tok):
+                        if len(part) == 0: continue
+                        if skip_newline:
+                            part_pattern = re.compile(r'\s*'.join(re.escape(c) for c in part))
+                            match = part_pattern.search(text, char_offset)
+                            st0 = match.start(0) - char_offset
+                            partlen = match.end(0) - match.start(0)
+                        else:
+                            st0 = text.index(part, char_offset) - char_offset
+                            partlen = len(part)
+                        lstripped = part.lstrip()
+                        if st < 0:
+                            st = char_offset + st0 + (len(part) - len(lstripped))
+                        char_offset += st0 + partlen
+                    additional_info = {START_CHAR: st, END_CHAR: char_offset}
+                else:
+                    additional_info = dict()
+                current_sent.append((tok, p, additional_info))
+                current_tok = ''
+                if (p == 2 or p == 4) and not no_ssplit:
+                    doc.append(process_sentence(current_sent, mwt_dict))
+                    current_sent = []
+
+        assert(len(current_tok) == 0)
+        if len(current_sent):
+            doc.append(process_sentence(current_sent, mwt_dict))
+
+    if output_file: CoNLL.dict2conll(doc, output_file)
+    return oov_count, offset, all_preds, doc
+
+
+"""Old Verion"""
 def output_predictions(output_file, trainer, data_generator, vocab, mwt_dict, max_seqlen=1000, orig_text=None, no_ssplit=False, use_regex_tokens=True):
     paragraphs = []
     for i, p in enumerate(data_generator.sentences):
@@ -131,7 +309,7 @@ def output_predictions(output_file, trainer, data_generator, vocab, mwt_dict, ma
     batches = int((len(paragraphs) + batch_size - 1) / batch_size)
 
     for i in range(batches):
-        # At evaluation time, each paragraph is treated as a single "sentence", and a batch of `batch_size` paragraphs 
+        # At evaluation time, each paragraph is treated as a single "sentence", and a batch of `batch_size` paragraphs
         # are tokenized together. `offsets` here are used by the data generator to identify which paragraphs to use
         # for the next batch of evaluation.
         batchparas = paragraphs[i * batch_size : (i + 1) * batch_size]
@@ -139,6 +317,10 @@ def output_predictions(output_file, trainer, data_generator, vocab, mwt_dict, ma
 
         batch = data_generator.next(eval_offsets=offsets)
         raw = batch[3]
+
+        #for b in batch:
+        #    print(b.shape)
+
 
         N = len(batch[3][0])
         if N <= eval_limit:
@@ -253,7 +435,7 @@ def output_predictions(output_file, trainer, data_generator, vocab, mwt_dict, ma
     return oov_count, offset, all_preds, doc
 
 def eval_model(args, trainer, batches, vocab, mwt_dict):
-    oov_count, N, all_preds, doc = output_predictions(args['conll_file'], trainer, batches, vocab, mwt_dict, args['max_seqlen'])
+    oov_count, N, all_preds, doc = output_predictions_pytorch(args['conll_file'], trainer, batches, vocab, mwt_dict, args['max_seqlen'])
 
     all_preds = np.concatenate(all_preds, 0)
     labels = [y[1] for x in batches.data for y in x]
