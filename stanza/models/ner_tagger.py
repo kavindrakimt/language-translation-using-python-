@@ -99,10 +99,12 @@ def parse_args(args=None):
 def main(args=None):
     args = parse_args(args=args)
 
+    #run on cpu if told to, ignore the CUDA even if available
     if args.cpu:
         args.cuda = False
     utils.set_random_seed(args.seed, args.cuda)
 
+    #this just turns the args into a dict-like struct so they're accessible by key (see line 111)
     args = vars(args)
     logger.info("Running NER tagger in {} mode".format(args['mode']))
 
@@ -112,9 +114,14 @@ def main(args=None):
         evaluate(args)
 
 def train(args):
+    #make sure the directory to save the model to is legit
     utils.ensure_dir(args['save_dir'])
+    #set up the model file path with the directory to save it in and the name
+    #ie saved_models/hifire2013tagger_prelim.pt where saved_models is save_dir and hifire2013tagger_prelim is save_name
     model_file = os.path.join(args['save_dir'], args['save_name']) if args['save_name'] is not None \
         else '{}/{}_nertagger.pt'.format(args['save_dir'], args['shorthand'])
+        #ex.: of the else clause naming pattern:
+        #     saved_models/hi_fire2013_nertagger.pt where hi_fire2013 was the given dataset shorthand
 
     pretrain = None
     vocab = None
@@ -160,8 +167,10 @@ def train(args):
     # load data
     logger.info("Loading data with batch size {}...".format(args['batch_size']))
     train_doc = Document(json.load(open(args['train_file'])))
+    #loads in json document and then processes it into batch structure using DataLoader
+    #call from models/ner/data.py
     train_batch = DataLoader(train_doc, args['batch_size'], args, pretrain, vocab=vocab, evaluation=False)
-    vocab = train_batch.vocab
+    vocab = train_batch.vocab ##important to analyze the back data structure
     dev_doc = Document(json.load(open(args['eval_file'])))
     dev_batch = DataLoader(dev_doc, args['batch_size'], args, pretrain, vocab=vocab, evaluation=True)
     dev_gold_tags = dev_batch.tags

@@ -134,6 +134,7 @@ def process_tags(sentences, scheme):
         logger.debug("Basic tagging scheme found in input; converting into BIOES scheme...")
     # process tags
     for sent in sentences:
+        #fix tag processing here actually
         words, tags = zip(*sent)
         # NER field sanity checking
         if any([x is None or x == '_' for x in tags]):
@@ -141,9 +142,15 @@ def process_tags(sentences, scheme):
         if convert_basic_to_bioes:
             # if basic, convert tags -> bio -> bioes
             tags = bio2_to_bioes(basic_to_bio(tags))
+            #   for i in range(3):
+            #       tags[i] = bio2_to_bioes(basic_to_bio(tags[i]))
         else:
             # first ensure BIO2 scheme
             tags = to_bio2(tags)
+            #   for i in range(3):
+            #       tags[i] = to_bio2(tags[i])
+            #           if convert_bio_to_bioes:
+            #               tags[i] = bio2_to_bioes(tags[i])
             # then convert to BIOES
             if convert_bio_to_bioes:
                 tags = bio2_to_bioes(tags)

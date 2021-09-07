@@ -13,6 +13,7 @@ logger = logging.getLogger('stanza')
 
 class DataLoader:
     def __init__(self, doc, batch_size, args, pretrain=None, vocab=None, evaluation=False, preprocess_tags=True):
+        #set class variables that are fed from params to new class object call
         self.batch_size = batch_size
         self.args = args
         self.eval = evaluation
@@ -21,6 +22,7 @@ class DataLoader:
         self.preprocess_tags = preprocess_tags
 
         data = self.load_doc(self.doc)
+        ##data = self.load_doc(train_doc) and self.load_doc(dev_doc) for train and dev in ner_tagger.py
         self.tags = [[w[1] for w in sent] for sent in data]
 
         # handle vocab
@@ -46,6 +48,7 @@ class DataLoader:
         self.data = self.chunk_batches(data)
         logger.debug("{} batches created.".format(len(self.data)))
 
+    ##TODO: WILL CHANGE --> INSERT 3 TAGS
     def init_vocab(self, data):
         def from_model(model_filename):
             """ Try loading vocab from charLM model file. """
@@ -60,6 +63,7 @@ class DataLoader:
         else: 
             charvocab = CharVocab(data, self.args['shorthand'])
         wordvocab = self.pretrain.vocab
+        #TagVocab function important for idx param, might be able to use idx=? to access specific tags
         tagvocab = TagVocab(data, self.args['shorthand'], idx=1)
         vocab = MultiVocab({'char': charvocab,
                             'word': wordvocab,
@@ -134,6 +138,12 @@ class DataLoader:
 
     def load_doc(self, doc):
         data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
+        #load in layered data here:
+        #   data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
+        #   for sentence in data:
+        #       for word in sentence:
+        #           ner1, ner2, ner3 = word[1]
+        #   play with this
         if self.preprocess_tags: # preprocess tags
             data = process_tags(data, self.args.get('scheme', 'bio'))
         return data
