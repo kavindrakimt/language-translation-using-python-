@@ -34,6 +34,9 @@ def is_bio_scheme(all_tags):
         True if the tagging scheme is BIO, otherwise False
     """
     for tag in all_tags:
+        int = random.randint(0, 100)
+        if int < 3:
+            print(tag)
         if tag == 'O':
             continue
         elif len(tag[0]) > 2 and tag[0][:2] in ('B-', 'I-'):
@@ -115,12 +118,12 @@ def bio2_to_bioes(tags):
                     if i+1 < len(tags) and tags[i+1][0][:2] == 'I-':
                         new_tags.append(tag)
                     else:
-                        i = random.randint(1, 100)
-                        if i <= 4:
-                            print(tag[0])
-                            print(tag[0][:2])
-                            print(tag[0][2:])
-                            print(tag[0][4:])
+                        # i = random.randint(1, 100)
+                        # if i <= 4:
+                        #     print(tag[0])
+                        #     print(tag[0][:2])
+                        #     print(tag[0][2:])
+                        #     print(tag[0][4:])
                         new_tags.append(['S-' + (tag[0])[2:], tag[1], tag[2]])
                 else:
                     raise Exception(f"Invalid IOB tag found: {tag}")
