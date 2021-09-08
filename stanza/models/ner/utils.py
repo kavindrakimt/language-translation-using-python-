@@ -34,7 +34,7 @@ def is_bio_scheme(all_tags):
         True if the tagging scheme is BIO, otherwise False
     """
     for tag in all_tags:
-        if tag == 'O':
+        if tag[0] == 'O':
             continue
         elif len(tag[0]) > 2 and tag[0][:2] in ('B-', 'I-'):
             continue
