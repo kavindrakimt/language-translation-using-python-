@@ -13,7 +13,7 @@ import random
 
 def normalize(e1, e2, e3):
     if e1 == 'o':
-        return "O"
+        return "O", "O", "O"
 
     if e2 != 'o' and e1[:2] != e2[:2]:
         raise ValueError("Found a token with conflicting position tags %s,%s" % (e1, e2))
@@ -23,22 +23,22 @@ def normalize(e1, e2, e3):
         raise ValueError("Found a token with conflicting position tags %s,%s,%s" % (e1, e2, e3))
 
     if e1[2:] in ('ORGANIZATION', 'FACILITIES'):
-        return e1
+        return e1, e2, e3
     if e1[2:] == 'ENTERTAINMENT' and e2[2:] != 'SPORTS' and e2[2:] != 'CINEMA':
-        return e1
+        return e1, e2, e3
     if e1[2:] == 'DISEASE' and e2 == 'o':
-        return e1
+        return e1, e2, e3
     if e1[2:] == 'PLANTS' and e2[2:] != 'PARTS':
-        return e1
+        return e1, e2, e3
     if e1[2:] == 'PERSON' and e2[2:] == 'INDIVIDUAL':
-        return e1
+        return e1, e2, e3
     if e1[2:] == 'LOCATION' and (e2[2:] == 'PLACE'):
-        return e1
+        return e1, e2, e3
     if e1[2:] in ('DATE', 'TIME', 'YEAR'):
         string = e1[:2] + 'DATE/TIME'
-        return string
+        return string, e2, e3
 
-    return "O"
+    return "O", "O", "O"
 
 def read_fileset(filenames):
     # first, read the sentences from each data file
@@ -72,8 +72,9 @@ def write_fileset(output_csv_file, sentences):
                 elif pieces[4] == 'o' and pieces[5] != 'o':
                     raise ValueError("Inner NER labeled but preceding layer was O")
                 # fout.write("%s\t%s\n" % (pieces[0], normalize(pieces[3])))
+                pieces[3], pieces[4], pieces[5] = normalize(pieces[3], pieces[4], pieces[5])
                 fout.write("%s\t%s,%s,%s\n" %
-                           (pieces[0], normalize(pieces[3]), normalize(pieces[4]), normalize(pieces[5])))
+                           (pieces[0], pieces[3], pieces[4], pieces[5]))
             fout.write("\n")
 
 def convert_fire_2013(input_path, train_csv_file, dev_csv_file, test_csv_file):
