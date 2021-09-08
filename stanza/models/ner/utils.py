@@ -114,7 +114,8 @@ def bio2_to_bioes(tags):
                     if i+1 < len(tags) and tags[i+1][0][:2] == 'I-':
                         new_tags.append(tag)
                     else:
-                        new_tags.append(['S-' + tag[0][2:], tag[1], tag[2]])
+                        print(tag[0][2:])
+                        new_tags.append(['S-' + (tag[0])[2:], tag[1], tag[2]])
                 else:
                     raise Exception(f"Invalid IOB tag found: {tag}")
     return new_tags
