@@ -55,24 +55,29 @@ class Trainer(BaseTrainer):
             # build model from scratch
             self.args = args
             self.vocab = vocab
+            # class trainer init, calls create new NERTagger init, model.py
             self.model = NERTagger(args, vocab, emb_matrix=pretrain.emb)
 
-        if train_classifier_only:
-            logger.info('Disabling gradient for non-classifier layers')
+        if train_classifier_only: # the reason to do this is if you don't want to heavily change model
+            # you just want to make the model move to account for new data expected to fit similar bounds
+            logger.info('Disabling gradient for non-classifier layers') #this is unique to NER --> arg for finetuning?
             exclude = ['tag_clf', 'crit']
             for pname, p in self.model.named_parameters():
                 if pname.split('.')[0] not in exclude:
                     p.requires_grad = False
         self.parameters = [p for p in self.model.parameters() if p.requires_grad]
-        if self.use_cuda:
+
+        if self.use_cuda: #run on what kind of processing
             self.model.cuda()
         else:
             self.model.cpu()
+        # set up best learning rate for model based on args given
         self.optimizer = utils.get_optimizer(self.args['optim'], self.parameters, self.args['lr'], momentum=self.args['momentum'])
 
     def update(self, batch, eval=False):
         inputs, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets = unpack_batch(batch, self.use_cuda)
         word, word_mask, wordchars, wordchars_mask, chars, tags = inputs
+        # TODO: tag1, tag2, tag3 = tags
 
         if eval:
             self.model.eval()
@@ -92,6 +97,7 @@ class Trainer(BaseTrainer):
     def predict(self, batch, unsort=True):
         inputs, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets = unpack_batch(batch, self.use_cuda)
         word, word_mask, wordchars, wordchars_mask, chars, tags = inputs
+        # TODO: tag1, tag2, tag3 = tags
 
         self.model.eval()
         batch_size = word.size(0)

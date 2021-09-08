@@ -65,6 +65,7 @@ class DataLoader:
         wordvocab = self.pretrain.vocab
         #TagVocab function important for idx param, might be able to use idx=? to access specific tags
         tagvocab = TagVocab(data, self.args['shorthand'], idx=1)
+        #TODO: again account for 3 tags in the MultiVocab struct
         vocab = MultiVocab({'char': charvocab,
                             'word': wordvocab,
                             'tag': tagvocab})
@@ -138,7 +139,8 @@ class DataLoader:
 
     def load_doc(self, doc):
         data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
-        #load in layered data here:
+        # TODO: load in the layered data instead, process the three tags instead of one
+        # load in layered data here:
         #   data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
         #   for sentence in data:
         #       for word in sentence:
