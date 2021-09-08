@@ -34,14 +34,12 @@ def is_bio_scheme(all_tags):
         True if the tagging scheme is BIO, otherwise False
     """
     for tag in all_tags:
-        int = random.randint(0, 100)
-        if int < 3:
-            print(tag)
         if tag == 'O':
             continue
         elif len(tag[0]) > 2 and tag[0][:2] in ('B-', 'I-'):
             continue
         else:
+            pirnt(tag)
             return False
     return True
 
