@@ -21,11 +21,11 @@ def normalize(e1, e2, e3):
     if e3 == 'o':
         e3 = 'O'
 
-    if e2 != 'o' and e1[:2] != e2[:2]:
+    if e2 != 'O' and e1[:2] != e2[:2]:
         raise ValueError("Found a token with conflicting position tags %s,%s" % (e1, e2))
-    if e3 != 'o' and e2 == 'o':
+    if e3 != 'O' and e2 == 'o':
         raise ValueError("Found a token with tertiary label but no secondary label %s,%s,%s" % (e1, e2, e3))
-    if e3 != 'o' and (e1[:2] != e2[:2] or e1[:2] != e3[:2]):
+    if e3 != 'O' and (e1[:2] != e2[:2] or e1[:2] != e3[:2]):
         raise ValueError("Found a token with conflicting position tags %s,%s,%s" % (e1, e2, e3))
 
     if e1[2:] in ('ORGANIZATION', 'FACILITIES'):
