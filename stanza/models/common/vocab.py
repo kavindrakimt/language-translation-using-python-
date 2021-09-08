@@ -237,6 +237,13 @@ class CharVocab(BaseVocab):
                 if count <= 4:
                     print(type(sent))
                     print(sent)
+            prelim_list = []
+            for sent in self.data:
+                for token in sent:
+                    prelim_list.append(token[0])
+                    for i in range(3):
+                        prelim_list.append(token[1][i])
+            print(prelim_list[:200])
             counter = Counter([c for sent in self.data for c in sent])
         self._id2unit = VOCAB_PREFIX + list(sorted(list(counter.keys()), key=lambda k: (counter[k], k), reverse=True))
         self._unit2id = {w:i for i, w in enumerate(self._id2unit)}
