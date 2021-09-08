@@ -36,7 +36,7 @@ def is_bio_scheme(all_tags):
     for tag in all_tags:
         if tag == 'O':
             continue
-        elif len(tag) > 2 and tag[:2] in ('B-', 'I-'):
+        elif len(tag[0]) > 2 and tag[0][:2] in ('B-', 'I-'):
             continue
         else:
             return False
@@ -55,9 +55,9 @@ def to_bio2(tags):
     """
     new_tags = []
     for i, tag in enumerate(tags):
-        if tag[0] == 'O':
+        if tag[0][0] == 'O':
             new_tags.append(tag)
-        elif tag[0] == 'I':
+        elif tag[0][0] == 'I':
             if i == 0 or tags[i-1][0] == 'O' or tags[i-1][0][1:] != tag[0][1:]:
                 new_tags.append(['B' + tag[0][1:], tag[1], tag[2]])
             else:
@@ -79,7 +79,7 @@ def basic_to_bio(tags):
     """
     new_tags = []
     for i, tag in enumerate(tags):
-        if tag[0] == 'O':
+        if tag[0][0] == 'O':
             new_tags.append(tag)
         elif i == 0 or tags[i-1][0] == 'O' or tags[i-1][0] != tag:
             new_tags.append(['B-' + tag[0], tag[1], tag[2]])
