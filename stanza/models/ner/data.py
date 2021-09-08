@@ -139,6 +139,13 @@ class DataLoader:
 
     def load_doc(self, doc):
         data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
+        count = 0
+        for sentence in data:
+            count += 1
+            for word in sentence:
+                ner1, ner2, ner3 = word[1]
+                if count <= 5:
+                    print(ner1, ner2, ner3)
         # TODO: load in the layered data instead, process the three tags instead of one
         # load in layered data here:
         #   data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
