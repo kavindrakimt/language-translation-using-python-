@@ -5,6 +5,7 @@ input column format data, the token is always in the first column, while the NER
 
 import argparse
 import json
+import random
 
 MIN_NUM_FIELD = 2
 MAX_NUM_FIELD = 5
@@ -22,15 +23,37 @@ def main():
     args = parse_args()
     process_dataset(args.input, args.output)
 
+# def process_dataset(input_filename, output_filename):
+#     sentences = load_conll03(input_filename)
+#     random.shuffle(sentences)
+#     random.shuffle(sentences)
+#     print("{} examples loaded from {}".format(len(sentences), input_filename))
+#
+#     document = []
+#     for (words, tags) in sentences:
+#         sent = []
+#         for w, t in zip(words, tags):
+#             sent += [{'text': w, 'ner': t}]
+#         document += [sent]
+#
+#     with open(output_filename, 'w') as outfile:
+#         json.dump(document, outfile, indent=1)
+#     print("Generated json file {}".format(output_filename))
+
 def process_dataset(input_filename, output_filename):
     sentences = load_conll03(input_filename)
+    random.shuffle(sentences)
+    random.shuffle(sentences)
     print("{} examples loaded from {}".format(len(sentences), input_filename))
-    
+
     document = []
     for (words, tags) in sentences:
         sent = []
         for w, t in zip(words, tags):
-            sent += [{'text': w, 'ner': t}]
+            t = t.split(',')
+            if len(t) != 3:
+                raise ValueError("Found %d NER tags instead of the expected 3" % len(tags))
+            sent += [{'text': w, 'ner': [t[0], t[1], t[2]]}]
         document += [sent]
 
     with open(output_filename, 'w') as outfile:

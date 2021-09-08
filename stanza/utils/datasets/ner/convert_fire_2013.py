@@ -87,11 +87,11 @@ def convert_fire_2013(input_path, train_csv_file, dev_csv_file, test_csv_file):
     random.shuffle(sentences)
 
     train_cutoff = int(0.8 * len(sentences))
-    dev_cutoff   = int(0.9 * len(sentences))
+    dev_cutoff = int(0.9 * len(sentences))
 
     train_sentences = sentences[:train_cutoff]
-    dev_sentences   = sentences[train_cutoff:dev_cutoff]
-    test_sentences  = sentences[dev_cutoff:]
+    dev_sentences = sentences[train_cutoff:dev_cutoff]
+    test_sentences = sentences[dev_cutoff:]
 
     random.shuffle(train_sentences)
     random.shuffle(dev_sentences)
@@ -102,17 +102,21 @@ def convert_fire_2013(input_path, train_csv_file, dev_csv_file, test_csv_file):
     assert len(test_sentences) > 0
 
     write_fileset(train_csv_file, train_sentences)
-    write_fileset(dev_csv_file,   dev_sentences)
-    write_fileset(test_csv_file,  test_sentences)
+    write_fileset(dev_csv_file, dev_sentences)
+    write_fileset(test_csv_file, test_sentences)
 
 if __name__ == '__main__':
     random.seed(1234)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_path', type=str, default="/home/john/extern_data/ner/FIRE2013/hindi_train",  help="Directory with raw files to read")
-    parser.add_argument('--train_file', type=str, default="/home/john/stanza/data/ner/hi_fire2013.train.csv", help="Where to put the train file")
-    parser.add_argument('--dev_file',   type=str, default="/home/john/stanza/data/ner/hi_fire2013.dev.csv",   help="Where to put the dev file")
-    parser.add_argument('--test_file',  type=str, default="/home/john/stanza/data/ner/hi_fire2013.test.csv",  help="Where to put the test file")
+    parser.add_argument('--input_path', type=str, default="/home/john/extern_data/ner/FIRE2013/hindi_train",
+                        help="Directory with raw files to read")
+    parser.add_argument('--train_file', type=str, default="/home/john/stanza/data/ner/hi_fire2013.train.csv",
+                        help="Where to put the train file")
+    parser.add_argument('--dev_file', type=str, default="/home/john/stanza/data/ner/hi_fire2013.dev.csv",
+                        help="Where to put the dev file")
+    parser.add_argument('--test_file', type=str, default="/home/john/stanza/data/ner/hi_fire2013.test.csv",
+                        help="Where to put the test file")
     args = parser.parse_args()
 
     convert_fire_2013(args.input_path, args.train_file, args.dev_file, args.test_file)
