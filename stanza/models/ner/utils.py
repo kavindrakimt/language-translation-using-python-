@@ -99,22 +99,22 @@ def bio2_to_bioes(tags):
     """
     new_tags = []
     for i, tag in enumerate(tags):
-        if tag == 'O':
+        if tag[0] == 'O':
             new_tags.append(tag)
         else:
-            if len(tag) < 2:
+            if len(tag[0]) < 2 or len(tag[1]) < 1 or len(tag[2]) < 1:
                 raise Exception(f"Invalid BIO2 tag found: {tag}")
             else:
-                if tag[:2] == 'I-': # convert to E- if next tag is not I-
-                    if i+1 < len(tags) and tags[i+1][:2] == 'I-':
+                if tag[0][:2] == 'I-': # convert to E- if next tag is not I-
+                    if i+1 < len(tags) and tags[i+1][0][:2] == 'I-':
                         new_tags.append(tag)
                     else:
-                        new_tags.append('E-' + tag[2:])
-                elif tag[:2] == 'B-': # convert to S- if next tag is not I-
-                    if i+1 < len(tags) and tags[i+1][:2] == 'I-':
+                        new_tags.append(['E-' + tag[0][2:], tag[1], tag[2]])
+                elif tag[0][:2] == 'B-': # convert to S- if next tag is not I-
+                    if i+1 < len(tags) and tags[i+1][0][:2] == 'I-':
                         new_tags.append(tag)
                     else:
-                        new_tags.append('S-' + tag[2:])
+                        new_tags.append(['S-' + tag[0][2:], tag[1], tag[2]])
                 else:
                     raise Exception(f"Invalid IOB tag found: {tag}")
     return new_tags
