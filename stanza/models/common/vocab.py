@@ -231,6 +231,12 @@ class CharVocab(BaseVocab):
                 if counter[k] < self.cutoff:
                     del counter[k]
         else: # special data from Char LM
+            count = 0
+            for sent in self.data:
+                count += 1
+                if count <= 4:
+                    print(type(sent))
+                    print(sent)
             counter = Counter([c for sent in self.data for c in sent])
         self._id2unit = VOCAB_PREFIX + list(sorted(list(counter.keys()), key=lambda k: (counter[k], k), reverse=True))
         self._unit2id = {w:i for i, w in enumerate(self._id2unit)}

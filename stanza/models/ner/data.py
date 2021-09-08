@@ -48,7 +48,7 @@ class DataLoader:
         self.data = self.chunk_batches(data)
         logger.debug("{} batches created.".format(len(self.data)))
 
-    ##TODO: WILL CHANGE --> INSERT 3 TAGS
+    ## TODO: WILL CHANGE --> INSERT 3 TAGS
     def init_vocab(self, data):
         def from_model(model_filename):
             """ Try loading vocab from charLM model file. """
