@@ -78,12 +78,12 @@ def basic_to_bio(tags):
     """
     new_tags = []
     for i, tag in enumerate(tags):
-        if tag == 'O':
+        if tag[0] == 'O':
             new_tags.append(tag)
-        elif i == 0 or tags[i-1] == 'O' or tags[i-1] != tag:
-            new_tags.append('B-' + tag)
+        elif i == 0 or tags[i-1][0] == 'O' or tags[i-1][0] != tag:
+            new_tags.append(['B-' + tag[0], tag[1], tag[2]])
         else:
-            new_tags.append('I-' + tag)
+            new_tags.append(['I-' + tag[0], tag[1], tag[2]])
     return new_tags
 
 
