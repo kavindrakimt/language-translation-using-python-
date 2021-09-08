@@ -39,7 +39,7 @@ def is_bio_scheme(all_tags):
         elif len(tag[0]) > 2 and tag[0][:2] in ('B-', 'I-'):
             continue
         else:
-            pirnt(tag)
+            print(tag)
             return False
     return True
 
