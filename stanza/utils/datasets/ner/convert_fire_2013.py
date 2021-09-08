@@ -13,7 +13,13 @@ import random
 
 def normalize(e1, e2, e3):
     if e1 == 'o':
-        return "O", "O", "O"
+        return 'O', 'O', 'O'
+    
+    if e2 == 'o':
+        e2 = 'O'
+    
+    if e3 == 'o':
+        e3 = 'O'
 
     if e2 != 'o' and e1[:2] != e2[:2]:
         raise ValueError("Found a token with conflicting position tags %s,%s" % (e1, e2))
@@ -38,7 +44,7 @@ def normalize(e1, e2, e3):
         string = e1[:2] + 'DATE/TIME'
         return string, e2, e3
 
-    return "O", "O", "O"
+    return 'O', 'O', 'O'
 
 def read_fileset(filenames):
     # first, read the sentences from each data file
