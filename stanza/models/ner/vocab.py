@@ -36,3 +36,21 @@ class MultiVocab(BaseMultiVocab):
             new[k] = class_dict[classname].load_state_dict(v)
         return new
 
+class CharVocab(BaseVocab):
+    def build_vocab(self):
+        if type(self.data[0][0]) is list: # general data from DataLoader
+            counter = Counter([c for sent in self.data for w in sent for c in w[self.idx]])
+            for k in list(counter.keys()):
+                if counter[k] < self.cutoff:
+                    del counter[k]
+        else: # special data from Char LM
+            prelim_count = []
+            for sent in self.data:
+                for token in sent:
+                    prelim_count.append(token[0])
+                    for i in range(3):
+                        prelim_count.append(token[1][i])
+            print(prelim_count[:200])
+            counter = Counter([c for c in prelim_count])
+        self._id2unit = VOCAB_PREFIX + list(sorted(list(counter.keys()), key=lambda k: (counter[k], k), reverse=True))
+        self._unit2id = {w:i for i, w in enumerate(self._id2unit)}

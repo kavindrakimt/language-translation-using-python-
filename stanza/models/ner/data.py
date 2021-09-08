@@ -4,8 +4,8 @@ import torch
 
 from stanza.models.common.data import map_to_ids, get_long_tensor, get_float_tensor, sort_all
 from stanza.models.common.vocab import PAD_ID, VOCAB_PREFIX
-from stanza.models.pos.vocab import CharVocab, WordVocab
-from stanza.models.ner.vocab import TagVocab, MultiVocab
+from stanza.models.pos.vocab import WordVocab
+from stanza.models.ner.vocab import TagVocab, MultiVocab, CharVocab
 from stanza.models.common.doc import *
 from stanza.models.ner.utils import process_tags
 

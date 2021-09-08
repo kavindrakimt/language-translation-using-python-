@@ -54,11 +54,11 @@ def to_bio2(tags):
     """
     new_tags = []
     for i, tag in enumerate(tags):
-        if tag == 'O':
+        if tag[0] == 'O':
             new_tags.append(tag)
         elif tag[0] == 'I':
-            if i == 0 or tags[i-1] == 'O' or tags[i-1][1:] != tag[1:]:
-                new_tags.append('B' + tag[1:])
+            if i == 0 or tags[i-1][0] == 'O' or tags[i-1][0][1:] != tag[0][1:]:
+                new_tags.append(['B' + tag[0][1:], tag[1], tag[2]])
             else:
                 new_tags.append(tag)
         else:
