@@ -68,7 +68,7 @@ class DataLoader:
         vocab_dict = {'char': char_vocab,
                       'word': word_vocab}
 
-        for i in range(len(self.data[0][1])):
+        for i in range(len(data[0][1])):
             key = "tag{}".format(i + 1)
             vocab_dict[key] = TagVocab(data, self.args['shorthand'], idx=1, tag_idx=i)
 
