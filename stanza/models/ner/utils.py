@@ -7,6 +7,30 @@ import random
 
 logger = logging.getLogger('stanza')
 
+
+def find_missing_tags(known_tags, test_tags):
+    if isinstance(known_tags, list) and isinstance(known_tags[0], list):
+        known_tags = set(x for y in known_tags for x in y)
+    if isinstance(test_tags, list) and isinstance(test_tags[0], list):
+        test_tags = sorted(set(x for y in test_tags for x in y))
+    missing_tags = sorted(x for x in test_tags if x not in known_tags)
+    return missing_tags
+
+
+def warn_missing_tags(known_tags, test_tags, test_set_name):
+    """
+    Print a warning if any tags present in the second list are not in the first list.
+
+    Can also handle a list of lists.
+    """
+    for
+    missing_tags = find_missing_tags(known_tags, test_tags)
+    if len(missing_tags) > 0:
+        logger.warning("Found tags in {} missing from the expected tag set: {}".format(test_set_name, missing_tags))
+        return True
+    return False
+
+
 def is_basic_scheme(all_tags):
     """
     Check if a basic tagging scheme is used. Return True if so.
@@ -43,6 +67,7 @@ def is_bio_scheme(all_tags):
             return False
     return True
 
+
 def to_bio2(tags):
     """
     Convert the original tag sequence to BIO2 format. If the input is already in BIO2 format,
@@ -59,13 +84,14 @@ def to_bio2(tags):
         if tag[0][0] == 'O':
             new_tags.append(tag)
         elif tag[0][0] == 'I':
-            if i == 0 or tags[i-1][0] == 'O' or tags[i-1][0][1:] != tag[0][1:]:
+            if i == 0 or tags[i - 1][0] == 'O' or tags[i - 1][0][1:] != tag[0][1:]:
                 new_tags.append(['B' + tag[0][1:], tag[1], tag[2]])
             else:
                 new_tags.append(tag)
         else:
             new_tags.append(tag)
     return new_tags
+
 
 def basic_to_bio(tags):
     """
@@ -82,7 +108,7 @@ def basic_to_bio(tags):
     for i, tag in enumerate(tags):
         if tag[0][0] == 'O':
             new_tags.append(tag)
-        elif i == 0 or tags[i-1][0] == 'O' or tags[i-1][0] != tag:
+        elif i == 0 or tags[i - 1][0] == 'O' or tags[i - 1][0] != tag:
             new_tags.append(['B-' + tag[0], tag[1], tag[2]])
         else:
             new_tags.append(['I-' + tag[0], tag[1], tag[2]])
@@ -107,13 +133,13 @@ def bio2_to_bioes(tags):
             if len(tag[0]) < 2 or len(tag[1]) < 1 or len(tag[2]) < 1:
                 raise Exception(f"Invalid BIO2 tag found: {tag}")
             else:
-                if tag[0][:2] == 'I-': # convert to E- if next tag is not I-
-                    if i+1 < len(tags) and tags[i+1][0][:2] == 'I-':
+                if tag[0][:2] == 'I-':  # convert to E- if next tag is not I-
+                    if i + 1 < len(tags) and tags[i + 1][0][:2] == 'I-':
                         new_tags.append(tag)
                     else:
                         new_tags.append(['E-' + tag[0][2:], tag[1], tag[2]])
-                elif tag[0][:2] == 'B-': # convert to S- if next tag is not I-
-                    if i+1 < len(tags) and tags[i+1][0][:2] == 'I-':
+                elif tag[0][:2] == 'B-':  # convert to S- if next tag is not I-
+                    if i + 1 < len(tags) and tags[i + 1][0][:2] == 'I-':
                         new_tags.append(tag)
                     else:
                         # i = random.randint(1, 100)
@@ -126,6 +152,7 @@ def bio2_to_bioes(tags):
                 else:
                     raise Exception(f"Invalid IOB tag found: {tag}")
     return new_tags
+
 
 def process_tags(sentences, scheme):
     res = []
@@ -142,7 +169,7 @@ def process_tags(sentences, scheme):
         logger.debug("Basic tagging scheme found in input; converting into BIOES scheme...")
     # process tags
     for sent in sentences:
-        #fix tag processing here actually
+        # fix tag processing here actually
         words, tags = zip(*sent)
         # NER field sanity checking
         if any([x is None or x == '_' for x in tags]):
@@ -162,7 +189,7 @@ def process_tags(sentences, scheme):
             # then convert to BIOES
             if convert_bio_to_bioes:
                 tags = bio2_to_bioes(tags)
-        res.append([(w,t) for w,t in zip(words, tags)])
+        res.append([(w, t) for w, t in zip(words, tags)])
     return res
 
 
@@ -182,8 +209,8 @@ def decode_from_bioes(tags):
     def flush():
         if len(ent_idxs) > 0:
             res.append({
-                'start': ent_idxs[0], 
-                'end': ent_idxs[-1], 
+                'start': ent_idxs[0],
+                'end': ent_idxs[-1],
                 'type': cur_type})
 
     for idx, tag in enumerate(tags):
@@ -192,19 +219,19 @@ def decode_from_bioes(tags):
         if tag == 'O':
             flush()
             ent_idxs = []
-        elif tag.startswith('B-'): # start of new ent
+        elif tag.startswith('B-'):  # start of new ent
             flush()
             ent_idxs = [idx]
             cur_type = tag[2:]
-        elif tag.startswith('I-'): # continue last ent
+        elif tag.startswith('I-'):  # continue last ent
             ent_idxs.append(idx)
             cur_type = tag[2:]
-        elif tag.startswith('E-'): # end last ent
+        elif tag.startswith('E-'):  # end last ent
             ent_idxs.append(idx)
             cur_type = tag[2:]
             flush()
             ent_idxs = []
-        elif tag.startswith('S-'): # start single word ent
+        elif tag.startswith('S-'):  # start single word ent
             flush()
             ent_idxs = [idx]
             cur_type = tag[2:]
