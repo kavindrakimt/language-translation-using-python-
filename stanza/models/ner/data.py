@@ -139,10 +139,7 @@ class DataLoader:
 
     def load_doc(self, doc):
         data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
-        for sentence in data:
-            for token in sentence:
-                ner1, ner2, ner3 = token[1]
-        # TODO: load in the layered data instead, process the three tags instead of one
+        # TO CONSIDER: load in the layered data instead, process the three tags instead of one
         # load in layered data here:
         #   data = doc.get([TEXT, NER], as_sentences=True, from_token=True)
         #   for sentence in data:
