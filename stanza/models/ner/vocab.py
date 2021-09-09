@@ -7,8 +7,10 @@ from stanza.models.common.pretrain import PretrainedWordVocab
 class TagVocab(BaseVocab):
     """ A vocab for the output tag sequence. """
     def build_vocab(self):
-        counter = Counter([w[self.idx] for sent in self.data for w in sent])
-
+        counter = Counter([w[self.idx][i]
+                           for sent in self.data
+                           for w in sent
+                           for i in range(len(w[1]))])
         self._id2unit = VOCAB_PREFIX + list(sorted(list(counter.keys()), key=lambda k: counter[k], reverse=True))
         self._unit2id = {w:i for i, w in enumerate(self._id2unit)}
 
@@ -49,12 +51,11 @@ class CharVocab(BaseVocab):
                 if counter[k] < self.cutoff:
                     del counter[k]
         else: # special data from Char LM
-            prelim_count = []
+            count_list = []
             for sent in self.data:
-                for token in sent:
-                    prelim_count.append(token[0])
-                    for i in range(3):
-                        prelim_count.append(token[1][i])
-            counter = Counter([c for c in prelim_count])
+                for w in sent:
+                    for tag in w[1]:
+                        count_list.append((w[0], tag))
+            counter = Counter(count_list)
         self._id2unit = VOCAB_PREFIX + list(sorted(list(counter.keys()), key=lambda k: (counter[k], k), reverse=True))
         self._unit2id = {w:i for i, w in enumerate(self._id2unit)}
