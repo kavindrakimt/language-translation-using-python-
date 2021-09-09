@@ -59,16 +59,21 @@ class DataLoader:
         if self.eval:
             raise AssertionError("Vocab must exist for evaluation.")
         if self.args['charlm']:
-            charvocab = CharVocab.load_state_dict(from_model(self.args['charlm_forward_file']))
+            char_vocab = CharVocab.load_state_dict(from_model(self.args['charlm_forward_file']))
         else: 
-            charvocab = CharVocab(data, self.args['shorthand'])
-        wordvocab = self.pretrain.vocab
-        #TagVocab function important for idx param, might be able to use idx=? to access specific tags
-        tagvocab = TagVocab(data, self.args['shorthand'], idx=1)
-        #TODO: again account for 3 tags in the MultiVocab struct
-        vocab = MultiVocab({'char': charvocab,
-                            'word': wordvocab,
-                            'tag': tagvocab})
+            char_vocab = CharVocab(data, self.args['shorthand'])
+
+        word_vocab = self.pretrain.vocab
+
+        vocab_dict = {'char': char_vocab,
+                      'word': word_vocab}
+
+        for i in range(len(self.data[0][1])):
+            key = "tag{}".format(i + 1)
+            vocab_dict[key] = TagVocab(data, self.args['shorthand'], idx=1, tag_idx=i)
+
+        vocab = MultiVocab(vocab_dict)
+
         return vocab
 
     def preprocess(self, data, vocab, args):
@@ -84,7 +89,9 @@ class DataLoader:
         for sent in data:
             processed_sent = [vocab['word'].map([case(w[0]) for w in sent])]
             processed_sent += [[vocab['char'].map([char_case(x) for x in w[0]]) for w in sent]]
-            processed_sent += [vocab['tag'].map([w[1] for w in sent])]
+            for i in range(len(self.data[0][1])):
+                key = "tag{}".format(i + 1)
+                processed_sent += [vocab[key].map([w[1][i] for w in sent])]
             processed.append(processed_sent)
         return processed
 
