@@ -44,7 +44,7 @@ class CharVocab(BaseVocab):
                 for w in sent:
                     for tag in w[1]:
                         count_list.append((w[0], tag))
-            counter = Counter([c for sent in self.data for w in sent for c in w[0][self.idx]])
+            counter = Counter(count_list)
             for k in list(counter.keys()):
                 if counter[k] < self.cutoff:
                     del counter[k]
