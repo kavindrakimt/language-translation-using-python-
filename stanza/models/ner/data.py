@@ -89,7 +89,7 @@ class DataLoader:
         for sent in data:
             processed_sent = [vocab['word'].map([case(w[0]) for w in sent])]
             processed_sent += [[vocab['char'].map([char_case(x) for x in w[0]]) for w in sent]]
-            for i in range(len(self.data[0][1])):
+            for i in range(len(data[0][1])):
                 key = "tag{}".format(i + 1)
                 processed_sent += [vocab[key].map([w[1][i] for w in sent])]
             processed.append(processed_sent)
