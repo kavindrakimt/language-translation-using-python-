@@ -23,11 +23,12 @@ def warn_missing_tags(known_tags, test_tags, test_set_name):
 
     Can also handle a list of lists.
     """
-    for
-    missing_tags = find_missing_tags(known_tags, test_tags)
-    if len(missing_tags) > 0:
-        logger.warning("Found tags in {} missing from the expected tag set: {}".format(test_set_name, missing_tags))
-        return True
+    for i in range(len(known_tags[0])):
+        missing_tags = find_missing_tags([known_tag[i] for known_tag in known_tags],
+                                         [test_tag[i] for test_tag in test_tags])
+        if len(missing_tags) > 0:
+            logger.warning("Found tags in {} missing from the expected tag set: {}".format(test_set_name, missing_tags))
+            return True
     return False
 
 

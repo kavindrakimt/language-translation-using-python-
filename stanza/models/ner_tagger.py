@@ -20,6 +20,7 @@ from torch import nn, optim
 
 from stanza.models.ner.data import DataLoader
 from stanza.models.ner.trainer import Trainer
+from stanza.models.ner.utils import warn_missing_tags
 from stanza.models.ner import scorer
 from stanza.models.common import utils
 from stanza.models.common.pretrain import Pretrain
@@ -191,8 +192,8 @@ def train(args):
     dev_gold_tags = dev_batch.tags
 
     if args['finetune']:
-        utils.warn_missing_tags([i for i in trainer.vocab['tag']], train_batch.tags, "training set")
-    utils.warn_missing_tags(train_batch.tags, dev_batch.tags, "dev set")
+        warn_missing_tags([i for i in trainer.vocab['tag']], train_batch.tags, "training set")
+    warn_missing_tags(train_batch.tags, dev_batch.tags, "dev set")
 
     # skip training if the language does not have training or dev data
     if len(train_batch) == 0 or len(dev_batch) == 0:
