@@ -51,9 +51,9 @@ def process_dataset(input_filename, output_filename):
         sent = []
         for w, t in zip(words, tags):
             t = t.split(',')
-            if len(t) != 3:
-                raise ValueError("Found %d NER tags instead of the expected 3" % len(tags))
-            sent += [{'text': w, 'ner': [t[0], t[1], t[2]]}]
+            if len(t) < 1:
+                raise ValueError("Found no NER tags")
+            sent += [{'text': w, 'ner': t}]
         document += [sent]
 
     with open(output_filename, 'w') as outfile:
