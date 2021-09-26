@@ -53,8 +53,10 @@ class Trainer(BaseTrainer):
         else:
             assert all(var is not None for var in [args, vocab, pretrain])
             # build model from scratch
-            self.args = args
             self.vocab = vocab
+            last_tag, _ = vocab[-1]
+            self.args = args
+            self.args['num_tags'] = int(last_tag)
             # class trainer init, calls create new NERTagger init, model.py
             self.model = NERTagger(args, vocab, emb_matrix=pretrain.emb)
 

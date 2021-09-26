@@ -73,6 +73,8 @@ class DataLoader:
             vocab_dict[key] = TagVocab(data, self.args['shorthand'], idx=1, tag_idx=i)
 
         vocab = MultiVocab(vocab_dict)
+        for k, v in vocab.items():
+            print(k)
 
         return vocab
 
