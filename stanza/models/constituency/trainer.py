@@ -33,6 +33,7 @@ from stanza.models.constituency.dynamic_oracle import RepairType, oracle_inorder
 from stanza.models.constituency.lstm_model import LSTMModel
 from stanza.models.constituency.parse_transitions import State, TransitionScheme
 from stanza.models.constituency.parse_tree import Tree
+from stanza.models.constituency.reranker import GPTReranker
 from stanza.models.constituency.utils import retag_trees, build_optimizer
 from stanza.server.parser_eval import EvaluateParser
 
@@ -728,19 +729,26 @@ def run_dev_set(model, dev_trees, args, evaluator=None):
     logger.info("Processing %d trees from %s", len(dev_trees), args['eval_file'])
     model.eval()
 
+    reranker = GPTReranker()
+
     tree_iterator = iter(tqdm(dev_trees))
     treebank = parse_sentences(tree_iterator, build_batch_from_trees, args['eval_batch_size'], model)
     full_results = treebank
 
     if args['num_generate'] > 0:
         logger.info("Generating %d random analyses", args['num_generate'])
-        generated_treebanks = [treebank]
+        generated_treebanks = [list(treebank)]
         for i in tqdm(range(args['num_generate'])):
             tree_iterator = iter(tqdm(dev_trees, leave=False, postfix="tb%03d" % i))
             generated_treebanks.append(parse_sentences(tree_iterator, build_batch_from_trees, args['eval_batch_size'], model, best=False))
 
-        full_results = [ParseResult(parses[0].gold, [p.predictions[0] for p in parses])
-                        for parses in zip(*generated_treebanks)]
+        full_results = []
+        for parses in tqdm(zip(*generated_treebanks), total=len(treebank)):
+            candidates = [x.predictions[0].tree for x in parses]
+            best_candidate, scores = reranker.rerank(candidates)
+            gold = parses[best_candidate].gold
+            preds = [parses[best_candidate].predictions[0]] + [p.predictions[0] for p in parses]
+            full_results.append(ParseResult(gold, preds))
 
     if len(treebank) < len(dev_trees):
         logger.warning("Only evaluating %d trees instead of %d", len(treebank), len(dev_trees))
@@ -755,14 +763,14 @@ def run_dev_set(model, dev_trees, args, evaluator=None):
             logger.warning("Cowardly refusing to overwrite {}".format(orig_file))
         else:
             with open(pred_file, 'w') as fout:
-                for tree in treebank:
+                for tree in full_results:
                     fout.write("{:_}".format(tree.predictions[0].tree))
                     fout.write("\n")
 
-            for i in range(args['num_generate']):
+            for i in range(len(generated_treebanks)):
                 pred_file = os.path.join(args['predict_dir'], args['predict_file'] + ".%03d.pred.mrg" % i)
                 with open(pred_file, 'w') as fout:
-                    for tree in generated_treebanks[i+1]:
+                    for tree in generated_treebanks[i]:
                         fout.write("{:_}".format(tree.predictions[0].tree))
                         fout.write("\n")
 
