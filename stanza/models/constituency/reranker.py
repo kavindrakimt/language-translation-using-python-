@@ -1,23 +1,36 @@
 import numpy as np
 import torch
-from transformers import GPT2Tokenizer, GPTNeoForCausalLM, GPTNeoConfig
+from transformers import GPT2Tokenizer, GPTNeoForCausalLM, GPTNeoConfig, GPT2Config, GPT2LMHeadModel
 
 class GPTReranker:
     def __init__(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        tokenizer = GPT2Tokenizer.from_pretrained("/home/john/gpt2/tokenizer_gpt_neo_vi")
+        #tokenizer = GPT2Tokenizer.from_pretrained("/home/john/gpt2/tokenizer_gpt_neo_vi")
+        #
+        #configuration_GPT2_neo = GPTNeoConfig.from_pretrained("NlpHUST/gpt-neo-vi-small", output_hidden_states=False)
+        #configuration_GPT2_neo.bos_token_id = tokenizer.bos_token_id
+        #configuration_GPT2_neo.eos_token_id = tokenizer.eos_token_id
+        #configuration_GPT2_neo.vocab_size = tokenizer.vocab_size
+        #
+        #model = GPTNeoForCausalLM.from_pretrained("NlpHUST/gpt-neo-vi-small", config=configuration_GPT2_neo)
+        #model.resize_token_embeddings(len(tokenizer))
+        #model = model.to(device)
+        #model.eval()
+        #model.load_state_dict(torch.load("/home/john/gpt2/official-neo-16_gpt-neo-vi-small.pt"))
 
-        configuration_GPT2_neo = GPTNeoConfig.from_pretrained("NlpHUST/gpt-neo-vi-small", output_hidden_states=False)
-        configuration_GPT2_neo.bos_token_id = tokenizer.bos_token_id
-        configuration_GPT2_neo.eos_token_id = tokenizer.eos_token_id
-        configuration_GPT2_neo.vocab_size = tokenizer.vocab_size
+        tokenizer = GPT2Tokenizer.from_pretrained("/home/john/gpt2/tokenizer_gpt2_viwiki")
 
-        model = GPTNeoForCausalLM.from_pretrained("NlpHUST/gpt-neo-vi-small", config=configuration_GPT2_neo)
+        configuration_GPT2 = GPT2Config(
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id
+        )
+
+        model = GPT2LMHeadModel.from_pretrained('danghuy1999/gpt2-viwiki', config=configuration_GPT2)
         model.resize_token_embeddings(len(tokenizer))
-        model.load_state_dict(torch.load("/home/john/gpt2/official-neo-16_gpt-neo-vi-small.pt"))
         model = model.to(device)
         model.eval()
+        model.load_state_dict(torch.load('/home/john/gpt2/official-viwiki-16_gpt2-viwiki.pt'))
 
         self.model = model
         self.tokenizer = tokenizer
