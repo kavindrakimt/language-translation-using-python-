@@ -276,6 +276,9 @@ class LSTMModel(BaseModel, nn.Module):
         # word size + constituency size + transition size
         self.output_layers = self.build_output_layers(self.args['num_output_layers'], len(transitions))
 
+        # matrices for predicting whether or not a tree was from gold or pred
+        self.reranker_output_layers = self.build_output_layers(self.args['num_output_layers'], 1)
+
         self.constituency_lstm = self.args['constituency_lstm']
 
         self._unary_limit = unary_limit
