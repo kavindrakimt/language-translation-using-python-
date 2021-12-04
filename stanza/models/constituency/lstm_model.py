@@ -274,10 +274,10 @@ class LSTMModel(BaseModel, nn.Module):
 
         # matrix for predicting the next transition using word/constituent/transition queues
         # word size + constituency size + transition size
-        self.output_layers = self.build_output_layers(self.args['num_output_layers'], len(transitions))
+        self.transition_output_layers = self.build_output_layers(self.args['num_output_layers'], len(transitions))
 
         # matrices for predicting whether or not a tree was from gold or pred
-        self.reranker_output_layers = self.build_output_layers(self.args['num_output_layers'], 1)
+        self.classifier_output_layers = self.build_output_layers(self.args['num_output_layers'], 1)
 
         self.constituency_lstm = self.args['constituency_lstm']
 
@@ -787,6 +787,14 @@ class LSTMModel(BaseModel, nn.Module):
     def is_top_down(self):
         return self._transition_scheme in (TransitionScheme.TOP_DOWN, TransitionScheme.TOP_DOWN_UNARY, TransitionScheme.TOP_DOWN_COMPOUND)
 
+    def classify(self, states):
+        """
+        Return a value which represents this model's guess whether a tree is a gold tree or a model tree
+
+        In other words, guess against itself
+        """
+        return self.run_output_layers(states, self.classifier_output_layers)
+
     def forward(self, states):
         """
         Return logits for a prediction of what transition to make next
@@ -794,6 +802,9 @@ class LSTMModel(BaseModel, nn.Module):
         We've basically done all the work analyzing the state as
         part of applying the transitions, so this method is very simple
         """
+        return self.run_output_layers(states, self.transition_output_layers)
+
+    def run_output_layers(self, states, output_layers):
         word_hx = torch.stack([state.word_queue[state.word_position].hx for state in states])
         transition_hx = torch.stack([state.transitions.value.output for state in states])
         # note that we use hx instead of output from the constituents
@@ -803,9 +814,9 @@ class LSTMModel(BaseModel, nn.Module):
         constituent_hx = torch.stack([state.constituents.value.hx[-1, 0, :] for state in states])
 
         hx = torch.cat((word_hx, transition_hx, constituent_hx), axis=1)
-        for idx, output_layer in enumerate(self.output_layers):
+        for idx, output_layer in enumerate(output_layers):
             hx = self.predict_dropout(hx)
-            if idx < len(self.output_layers) - 1:
+            if idx < len(output_layers) - 1:
                 hx = self.nonlinearity(hx)
             hx = output_layer(hx)
         return hx

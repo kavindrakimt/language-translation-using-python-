@@ -375,6 +375,10 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
     if args['cuda']:
         model_loss_function.cuda()
 
+    classifier_loss_function = nn.BCEWithLogitsLoss()
+    if args['cuda']:
+        classifier_loss_function.cuda()
+
     device = next(model.parameters()).device
     transition_tensors = {x: torch.tensor(y, requires_grad=False, device=device).unsqueeze(0)
                           for (y, x) in enumerate(transitions)}
@@ -400,7 +404,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
         epoch_data = epoch_data[:args['epoch_size']]
         epoch_data.sort(key=lambda x: len(x[1]))
 
-        epoch_loss, transitions_correct, transitions_incorrect = train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, epoch_data, args)
+        epoch_loss, transitions_correct, transitions_incorrect = train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args)
 
         # print statistics
         f1 = run_dev_set(model, dev_trees, args)
@@ -413,7 +417,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
             trainer.save(model_latest_filename, save_optimizer=True)
         logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_loss, epoch, f1, best_epoch, best_f1))
 
-def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, epoch_data, args):
+def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args):
     interval_starts = list(range(0, len(epoch_data), args['train_batch_size']))
     random.shuffle(interval_starts)
 
@@ -437,6 +441,8 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
         fake_transitions_used += ftu
         epoch_loss += batch_loss
 
+        train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args)
+
     total_correct = sum(v for _, v in transitions_correct.items())
     total_incorrect = sum(v for _, v in transitions_incorrect.items())
     logger.info("Transitions correct: %d\n  %s", total_correct, str(transitions_correct))
@@ -447,6 +453,27 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
         logger.info("Fake transitions used: %d", fake_transitions_used)
 
     return epoch_loss, total_correct, total_incorrect
+
+def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args):
+    """
+    Train the classifier layers for tree in/out of gold dataset
+    """
+    initial_states = parse_transitions.initial_state_from_gold_trees([tree for tree, _ in batch], model)
+    batch = [state._replace(gold_sequence=sequence)
+             for (tree, sequence), state in zip(batch, initial_states)]
+
+    device = next(model.parameters()).device
+    answers = torch.cat((torch.ones(len(batch)), torch.zeros(len(batch)))).to(device)
+    classifications = []
+    classifications.extend(classify_batch(batch))
+    # TODO: for any sentences which come back identical, we can build
+    # fake transition sequences using the random walk
+    parsed_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model)
+    classifications.extend(classify_batch(parsed_batch))
+
+def classify_batch(parsed_batch):
+    return []  # TODO
+
 
 def train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, model_loss_function, args):
     # the batch will be empty when all trees from this epoch are trained
@@ -529,6 +556,19 @@ def train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, mo
     optimizer.zero_grad()
 
     return transitions_correct, transitions_incorrect, repairs_used, fake_transitions_used, batch_loss
+
+def build_batch_from_states(batch_size, data_iterator, model):
+    """
+    If you already have states, such as during training, this turns them into parsing batches
+    """
+    tree_batch = []
+    for _ in range(batch_size):
+        sentence = next(data_iterator, None)
+        if sentence is None:
+            break
+        tree_batch.append(sentence)
+
+    return tree_batch
 
 def build_batch_from_trees(batch_size, data_iterator, model):
     """
