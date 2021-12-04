@@ -273,7 +273,7 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
 
     unary_limit = max(max(t.count_unary_depth() for t in train_trees),
                       max(t.count_unary_depth() for t in dev_trees)) + 1
-    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, args['transition_scheme'], "training", )
+    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, args['transition_scheme'], "training")
     dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, args['transition_scheme'], "dev")
 
     logger.info("Total unique transitions in train set: %d", len(train_transitions))
