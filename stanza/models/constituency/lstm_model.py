@@ -263,8 +263,8 @@ class LSTMModel(BaseModel, nn.Module):
         # TODO: make the hidden size here an option?
         self.constituent_reduce_lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=self.num_layers, bidirectional=True, dropout=self.lstm_layer_dropout)
         # affine transformation from bi-lstm reduce to a new hidden layer
-        self.reduce_linear = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        initialize_linear(self.reduce_linear, self.args['nonlinearity'], self.hidden_size * 2)
+        self.constituent_reduce_linear = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        initialize_linear(self.constituent_reduce_linear, self.args['nonlinearity'], self.hidden_size * 2)
 
         self.nonlinearity = build_nonlinearity(self.args['nonlinearity'])
 
@@ -707,7 +707,7 @@ class LSTMModel(BaseModel, nn.Module):
         forward_hx = lstm_output[-2, :]
         backward_hx = lstm_output[-1, :]
 
-        hx = self.reduce_linear(torch.cat((forward_hx, backward_hx), axis=1))
+        hx = self.constituent_reduce_linear(torch.cat((forward_hx, backward_hx), axis=1))
         hx = self.nonlinearity(hx)
 
         constituents = []
