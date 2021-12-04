@@ -251,10 +251,11 @@ def remove_optimizer(args, model_save_file, model_load_file):
     trainer = Trainer.load(model_load_file, pt, forward_charlm, backward_charlm, use_gpu=False, load_optimizer=False)
     trainer.save(model_save_file)
 
-def convert_trees_to_sequences(trees, tree_type, transition_scheme):
-    logger.info("Building {} transition sequences".format(tree_type))
-    if logger.getEffectiveLevel() <= logging.INFO:
-        trees = tqdm(trees)
+def convert_trees_to_sequences(trees, transition_scheme, log_name):
+    if log_name is not None:
+        logger.info("Building {} transition sequences".format(log_name))
+        if logger.getEffectiveLevel() <= logging.INFO:
+            trees = tqdm(trees)
     sequences = build_treebank(trees, transition_scheme)
     transitions = transition_sequence.all_transitions(sequences)
     return sequences, transitions
@@ -272,8 +273,8 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
 
     unary_limit = max(max(t.count_unary_depth() for t in train_trees),
                       max(t.count_unary_depth() for t in dev_trees)) + 1
-    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'])
-    dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'])
+    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, args['transition_scheme'], "training", )
+    dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, args['transition_scheme'], "dev")
 
     logger.info("Total unique transitions in train set: %d", len(train_transitions))
     for trans in dev_transitions:
@@ -404,7 +405,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
         epoch_data = epoch_data[:args['epoch_size']]
         epoch_data.sort(key=lambda x: len(x[1]))
 
-        epoch_loss, transitions_correct, transitions_incorrect = train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args)
+        epoch_transition_loss, transitions_correct, transitions_incorrect, epoch_classifier_loss = train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args)
 
         # print statistics
         f1 = run_dev_set(model, dev_trees, args)
@@ -415,13 +416,14 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
             trainer.save(model_filename, save_optimizer=True)
         if model_latest_filename:
             trainer.save(model_latest_filename, save_optimizer=True)
-        logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_loss, epoch, f1, best_epoch, best_f1))
+        logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total transition loss for epoch: {}\n  Total classifier loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_transition_loss, epoch_classifier_loss, epoch, f1, best_epoch, best_f1))
 
 def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args):
     interval_starts = list(range(0, len(epoch_data), args['train_batch_size']))
     random.shuffle(interval_starts)
 
-    epoch_loss = 0.0
+    epoch_transition_loss = 0.0
+    epoch_classifier_loss = 0.0
 
     model = trainer.model
     optimizer = trainer.optimizer
@@ -439,9 +441,9 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
         transitions_incorrect += new_ti
         repairs_used += new_ru
         fake_transitions_used += ftu
-        epoch_loss += batch_loss
+        epoch_transition_loss += batch_loss
 
-        train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args)
+        epoch_classifier_loss += train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args)
 
     total_correct = sum(v for _, v in transitions_correct.items())
     total_incorrect = sum(v for _, v in transitions_incorrect.items())
@@ -452,7 +454,7 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
     if fake_transitions_used > 0:
         logger.info("Fake transitions used: %d", fake_transitions_used)
 
-    return epoch_loss, total_correct, total_incorrect
+    return epoch_transition_loss, total_correct, total_incorrect, epoch_classifier_loss
 
 def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args):
     """
@@ -465,14 +467,47 @@ def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_f
     device = next(model.parameters()).device
     answers = torch.cat((torch.ones(len(batch)), torch.zeros(len(batch)))).to(device)
     classifications = []
-    classifications.extend(classify_batch(batch))
+    classifications.extend(classify_batch(model, batch))
     # TODO: for any sentences which come back identical, we can build
     # fake transition sequences using the random walk
     parsed_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model)
-    classifications.extend(classify_batch(parsed_batch))
+    model_sequences, _ = convert_trees_to_sequences([t.predictions[0].tree for t in parsed_batch], args['transition_scheme'], None)
+    batch = [state._replace(gold_sequence=sequence)
+             for sequence, state in zip(model_sequences, initial_states)]
+    classifications.extend(classify_batch(model, batch))
+    classifications = torch.stack(classifications)
 
-def classify_batch(parsed_batch):
-    return []  # TODO
+    batch_loss = classifier_loss_function(classifications, answers)
+    batch_loss.backward()
+    batch_loss = batch_loss.item()
+
+    optimizer.step()
+    optimizer.zero_grad()
+
+    return batch_loss
+
+def classify_batch(model, batch):
+    """
+    Given a batch with its associated sequences, run the model, then classify the tree as in/out gold
+
+    Returns a tensor of size len(batch)
+    """
+    finished_states = []
+    while len(batch) > 0:
+        gold_transitions = [x.gold_sequence[x.num_transitions()] for x in batch]
+
+        # bulk update states - significantly faster
+        batch = parse_transitions.bulk_apply(model, batch, gold_transitions, fail=True)
+        new_batch = []
+        for state in batch:
+            if state.num_transitions() == len(state.gold_sequence):
+                finished_states.append(state)
+            else:
+                new_batch.append(state)
+        batch = new_batch
+
+    classification = model.classify(finished_states)
+    return classification.squeeze()
 
 
 def train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, model_loss_function, args):
