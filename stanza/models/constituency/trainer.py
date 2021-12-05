@@ -476,6 +476,13 @@ def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_f
              for sequence, state in zip(model_sequences, initial_states)]
     classifications.extend(classify_batch(model, batch))
     classifications = torch.stack(classifications)
+    #print(answers)
+    #print(classifications)
+
+    #print("B:    COL", ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
+    #      "CRL %.5f" % torch.linalg.norm(model.constituent_reduce_linear.weight).item(),
+    #      "G %.5f" % torch.sum(classifications[:len(batch)]).item(),
+    #      "P %.5f" % torch.sum(classifications[len(batch):]).item())
 
     batch_loss = classifier_loss_function(classifications, answers)
     batch_loss.backward()
@@ -484,31 +491,13 @@ def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_f
     optimizer.step()
     optimizer.zero_grad()
 
+    #print("  A:  COL", ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
+    #      "CRL %.5f" % torch.linalg.norm(model.constituent_reduce_linear.weight).item(),
+    #      "G %.5f" % torch.sum(classifications[:len(batch)]).item(),
+    #      "P %.5f" % torch.sum(classifications[len(batch):]).item(),
+    #      "BL %.5f" % batch_loss)
+
     return batch_loss
-
-def classify_batch(model, batch):
-    """
-    Given a batch with its associated sequences, run the model, then classify the tree as in/out gold
-
-    Returns a tensor of size len(batch)
-    """
-    finished_states = []
-    while len(batch) > 0:
-        gold_transitions = [x.gold_sequence[x.num_transitions()] for x in batch]
-
-        # bulk update states - significantly faster
-        batch = parse_transitions.bulk_apply(model, batch, gold_transitions, fail=True)
-        new_batch = []
-        for state in batch:
-            if state.num_transitions() == len(state.gold_sequence):
-                finished_states.append(state)
-            else:
-                new_batch.append(state)
-        batch = new_batch
-
-    classification = model.classify(finished_states)
-    return classification.squeeze()
-
 
 def train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, model_loss_function, args):
     # the batch will be empty when all trees from this epoch are trained
@@ -592,6 +581,37 @@ def train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, mo
 
     return transitions_correct, transitions_incorrect, repairs_used, fake_transitions_used, batch_loss
 
+def classify_batch(model, batch):
+    """
+    Given a batch with its associated sequences, run the model, then classify the tree as in/out gold
+
+    Returns a tensor of size len(batch)
+    """
+    finished_states = []
+    finished_indices = []
+    indices = list(range(len(batch)))
+
+    while len(batch) > 0:
+        gold_transitions = [x.gold_sequence[x.num_transitions()] for x in batch]
+
+        # bulk update states - significantly faster
+        batch = parse_transitions.bulk_apply(model, batch, gold_transitions, fail=True)
+        new_batch = []
+        new_indices = []
+        for idx, state in zip(indices, batch):
+            if state.num_transitions() == len(state.gold_sequence):
+                finished_states.append(state)
+                finished_indices.append(idx)
+            else:
+                new_batch.append(state)
+                new_indices.append(idx)
+        batch = new_batch
+        indices = new_indices
+
+    finished_states = utils.unsort(finished_states, finished_indices)
+    classification = model.classify(finished_states)
+    return classification.squeeze()
+
 def build_batch_from_states(batch_size, data_iterator, model):
     """
     If you already have states, such as during training, this turns them into parsing batches
@@ -638,7 +658,6 @@ def build_batch_from_tagged_words(batch_size, data_iterator, model):
 ParseResult = namedtuple("ParseResult", ['gold', 'predictions'])
 ParsePrediction = namedtuple("ParsePrediction", ['tree', 'score'])
 
-@torch.no_grad()
 def parse_sentences(data_iterator, build_batch_fn, batch_size, model, best=True):
     """
     Given an iterator over the data and a method for building batches, returns a bunch of parse trees.
@@ -699,6 +718,7 @@ def parse_sentences(data_iterator, build_batch_fn, batch_size, model, best=True)
     treebank = utils.unsort(treebank, treebank_indices)
     return treebank
 
+@torch.no_grad()
 def parse_tagged_words(model, words, batch_size):
     """
     This parses tagged words and returns a list of trees.
@@ -717,6 +737,43 @@ def parse_tagged_words(model, words, batch_size):
     results = [t.predictions[0].tree for t in treebank]
     return results
 
+def classify_tree_batch(model, batch, args):
+    """
+    Test the accuracy of the model on a single batch
+
+    The batch should be a list of tuples: (gold, pred)
+    """
+    batch_states = parse_transitions.initial_state_from_gold_trees([t[0] for t in batch], model)
+
+    gold_sequences, _ = convert_trees_to_sequences([t[0] for t in batch], args['transition_scheme'], None)
+    gold_states = [state._replace(gold_sequence=sequence)
+                   for sequence, state in zip(gold_sequences, batch_states)]
+    gold_classifications = classify_batch(model, gold_states)
+
+    pred_sequences, _ = convert_trees_to_sequences([t[1] for t in batch], args['transition_scheme'], None)
+    pred_states = [state._replace(gold_sequence=sequence)
+                   for sequence, state in zip(pred_sequences, batch_states)]
+    pred_classifications = classify_batch(model, pred_states)
+    score = torch.sum(gold_classifications > pred_classifications).item()
+    return score
+
+def classify_treebank(model, treebank, batch_size, args):
+    """
+    Test the accuracy of the model on an entire treebank
+    """
+    treebank = [(p.gold, p.predictions[0].tree) for p in treebank]
+    # TODO: replace exact parses with a random walk
+    treebank = [p for p in treebank if p[0] != p[1]]
+
+    if len(treebank) == 0:
+        logger.info("Classifier nothing to test!  All trees were parsed correctly")
+        return
+    num_correct = 0
+    for batch_start in tqdm(range(0, len(treebank), batch_size)):
+        num_correct += classify_tree_batch(model, treebank[batch_start:batch_start+batch_size], args)
+    logger.info("Classifier num correct: %d / %d (%.5f)", num_correct, len(treebank), num_correct / len(treebank))
+
+@torch.no_grad()
 def run_dev_set(model, dev_trees, args):
     """
     This reparses a treebank and executes the CoreNLP Java EvalB code.
@@ -729,6 +786,8 @@ def run_dev_set(model, dev_trees, args):
     tree_iterator = iter(tqdm(dev_trees))
     treebank = parse_sentences(tree_iterator, build_batch_from_trees, args['eval_batch_size'], model)
     full_results = treebank
+
+    classify_treebank(model, treebank, args['eval_batch_size'], args)
 
     if args['num_generate'] > 0:
         logger.info("Generating %d random analyses", args['num_generate'])
