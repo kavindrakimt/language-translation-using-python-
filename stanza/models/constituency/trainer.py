@@ -737,7 +737,7 @@ def parse_tagged_words(model, words, batch_size):
     results = [t.predictions[0].tree for t in treebank]
     return results
 
-def classify_tree_batch(model, batch, args):
+def classify_prediction_batch(model, batch, args):
     """
     Test the accuracy of the model on a single batch
 
@@ -757,7 +757,7 @@ def classify_tree_batch(model, batch, args):
     score = torch.sum(gold_classifications > pred_classifications).item()
     return score
 
-def classify_treebank(model, treebank, batch_size, args):
+def classify_predictions(model, treebank, batch_size, args):
     """
     Test the accuracy of the model on an entire treebank
     """
@@ -772,7 +772,7 @@ def classify_treebank(model, treebank, batch_size, args):
     logger.info("Comparing %d gold trees to predictions using the classifier", len(treebank))
     num_correct = 0
     for batch_start in tqdm(range(0, len(treebank), batch_size)):
-        num_correct += classify_tree_batch(model, treebank[batch_start:batch_start+batch_size], args)
+        num_correct += classify_prediction_batch(model, treebank[batch_start:batch_start+batch_size], args)
     logger.info("Classifier num correct: %d / %d (%.5f)", num_correct, len(treebank), num_correct / len(treebank))
 
 @torch.no_grad()
@@ -789,7 +789,7 @@ def run_dev_set(model, dev_trees, args):
     treebank = parse_sentences(tree_iterator, build_batch_from_trees, args['eval_batch_size'], model)
     full_results = treebank
 
-    classify_treebank(model, treebank, args['eval_batch_size'], args)
+    classify_predictions(model, treebank, args['eval_batch_size'], args)
 
     if args['num_generate'] > 0:
         logger.info("Generating %d random analyses", args['num_generate'])
