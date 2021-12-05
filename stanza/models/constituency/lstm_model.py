@@ -300,6 +300,11 @@ class LSTMModel(BaseModel, nn.Module):
             initialize_linear(output_layer, self.args['nonlinearity'], input_size)
         return output_layers
 
+    def general_parameters(self):
+        params = list(self.parameters())
+        classifier_parameters = set(self.classifier_output_layers.parameters())
+        return [x for x in params if x not in classifier_parameters]
+
     def num_words_known(self, words):
         return sum(word in self.vocab_map or word.lower() in self.vocab_map for word in words)
 
