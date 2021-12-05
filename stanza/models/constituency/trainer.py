@@ -768,6 +768,8 @@ def classify_treebank(model, treebank, batch_size, args):
     if len(treebank) == 0:
         logger.info("Classifier nothing to test!  All trees were parsed correctly")
         return
+
+    logger.info("Comparing %d gold trees to predictions using the classifier", len(treebank))
     num_correct = 0
     for batch_start in tqdm(range(0, len(treebank), batch_size)):
         num_correct += classify_tree_batch(model, treebank[batch_start:batch_start+batch_size], args)
