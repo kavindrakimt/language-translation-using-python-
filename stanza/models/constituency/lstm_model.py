@@ -305,6 +305,17 @@ class LSTMModel(BaseModel, nn.Module):
         classifier_parameters = set(self.classifier_output_layers.parameters())
         return [x for x in params if x not in classifier_parameters]
 
+    def general_requires_grad(self, requires_grad):
+        for p in self.general_parameters():
+            p.requires_grad = requires_grad
+
+    def classifier_parameters(self):
+        return self.classifier_output_layers.parameters()
+
+    def classifier_requires_grad(self, requires_grad):
+        for p in self.classifier_parameters():
+            p.requires_grad = requires_grad
+
     def num_words_known(self, words):
         return sum(word in self.vocab_map or word.lower() in self.vocab_map for word in words)
 

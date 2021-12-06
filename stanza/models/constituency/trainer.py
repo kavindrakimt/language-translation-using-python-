@@ -435,6 +435,9 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
     fake_transitions_used = 0
 
     for interval_start in tqdm(interval_starts, postfix="Batch"):
+        model.general_requires_grad(True)
+        model.classifier_requires_grad(False)
+
         batch = epoch_data[interval_start:interval_start+args['train_batch_size']]
         new_tc, new_ti, new_ru, ftu, batch_loss = train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, model_loss_function, args)
 
@@ -444,7 +447,12 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
         fake_transitions_used += ftu
         epoch_transition_loss += batch_loss
 
+        model.classifier_requires_grad(True)
+        model.general_requires_grad(False)
         epoch_classifier_loss += train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args)
+
+        optimizer.step()
+        optimizer.zero_grad()
 
     total_correct = sum(v for _, v in transitions_correct.items())
     total_incorrect = sum(v for _, v in transitions_incorrect.items())
@@ -457,46 +465,49 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
 
     return epoch_transition_loss, total_correct, total_incorrect, epoch_classifier_loss
 
+def debug_weights(model, title):
+    logger.info("%s: COL %s CRL %.5f", title,
+                ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
+                torch.linalg.norm(model.constituent_reduce_linear.weight).item())
+
 def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args):
     """
     Train the classifier layers for tree in/out of gold dataset
     """
     initial_states = parse_transitions.initial_state_from_gold_trees([tree for tree, _ in batch], model)
-    batch = [state._replace(gold_sequence=sequence)
-             for (tree, sequence), state in zip(batch, initial_states)]
+    gold_batch = [state._replace(gold_sequence=sequence)
+                  for (tree, sequence), state in zip(batch, initial_states)]
 
     device = next(model.parameters()).device
-    answers = torch.cat((torch.ones(len(batch)), torch.zeros(len(batch)))).to(device)
+    answers = torch.ones(len(batch))
     classifications = []
-    classifications.extend(classify_batch(model, batch))
-    # TODO: for any sentences which come back identical, we can build
-    # fake transition sequences using the random walk
-    parsed_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model)
-    model_sequences, _ = convert_trees_to_sequences([t.predictions[0].tree for t in parsed_batch], args['transition_scheme'], None)
-    batch = [state._replace(gold_sequence=sequence)
-             for sequence, state in zip(model_sequences, initial_states)]
-    classifications.extend(classify_batch(model, batch))
-    classifications = torch.stack(classifications)
-    #print(answers)
-    #print(classifications)
+    classifications.extend(classify_batch(model, gold_batch))
 
-    #print("B:    COL", ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
-    #      "CRL %.5f" % torch.linalg.norm(model.constituent_reduce_linear.weight).item(),
-    #      "G %.5f" % torch.sum(classifications[:len(batch)]).item(),
-    #      "P %.5f" % torch.sum(classifications[len(batch):]).item())
+    # now, predict the trees using the model and train the classifier
+    # to recognize them as wrong
+    pred_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model)
+    model_sequences, _ = convert_trees_to_sequences([t.predictions[0].tree for t in pred_batch], args['transition_scheme'], None)
+    pred_batch = [state._replace(gold_sequence=sequence)
+                  for sequence, state, pred in zip(model_sequences, initial_states, pred_batch)
+                  if pred.gold != pred.predictions[0].tree]
+    classifications.extend(classify_batch(model, pred_batch))
+
+    answers = torch.cat((answers, torch.zeros(len(pred_batch))))
+
+    # also do a set of random walk sentences as negative examples
+    pred_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model, best=False)
+    model_sequences, _ = convert_trees_to_sequences([t.predictions[0].tree for t in pred_batch], args['transition_scheme'], None)
+    pred_batch = [state._replace(gold_sequence=sequence)
+                  for sequence, state, pred in zip(model_sequences, initial_states, pred_batch)
+                  if pred.gold != pred.predictions[0].tree]
+    classifications.extend(classify_batch(model, pred_batch))
+    classifications = torch.stack(classifications)
+
+    answers = torch.cat((answers, torch.zeros(len(pred_batch)))).to(device)
 
     batch_loss = classifier_loss_function(classifications, answers)
     batch_loss.backward()
     batch_loss = batch_loss.item()
-
-    optimizer.step()
-    optimizer.zero_grad()
-
-    #print("  A:  COL", ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
-    #      "CRL %.5f" % torch.linalg.norm(model.constituent_reduce_linear.weight).item(),
-    #      "G %.5f" % torch.sum(classifications[:len(batch)]).item(),
-    #      "P %.5f" % torch.sum(classifications[len(batch):]).item(),
-    #      "BL %.5f" % batch_loss)
 
     return batch_loss
 
@@ -576,9 +587,6 @@ def train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, mo
     tree_loss = model_loss_function(errors, answers)
     tree_loss.backward()
     batch_loss = tree_loss.item()
-
-    optimizer.step()
-    optimizer.zero_grad()
 
     return transitions_correct, transitions_incorrect, repairs_used, fake_transitions_used, batch_loss
 
@@ -812,8 +820,9 @@ def rerank_results(model, full_results, batch_size, args):
     if min_len != max_len:
         raise ValueError("Results do not line up as expected!")
 
+    logger.info("Scoring %d sets of trees using the classifier", max_len)
     scored_treebanks = []
-    for idx in range(max_len):
+    for idx in tqdm(range(max_len)):
         trees = [x.predictions[idx].tree for x in full_results]
         scores = classify_trees(model, trees, batch_size, args)
         trees = [ParsePrediction(tree, score.item()) for tree, score in zip(trees, scores)]
