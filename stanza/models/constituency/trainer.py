@@ -406,7 +406,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
         epoch_data = epoch_data[:args['epoch_size']]
         epoch_data.sort(key=lambda x: len(x[1]))
 
-        epoch_transition_loss, transitions_correct, transitions_incorrect, epoch_classifier_loss = train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args)
+        epoch_transition_loss, transitions_correct, transitions_incorrect, epoch_classifier_loss, epoch_gan_loss = train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args)
 
         # print statistics
         f1 = run_dev_set(model, dev_trees, args)
@@ -417,13 +417,14 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
             trainer.save(model_filename, save_optimizer=True)
         if model_latest_filename:
             trainer.save(model_latest_filename, save_optimizer=True)
-        logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total transition loss for epoch: {}\n  Total classifier loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_transition_loss, epoch_classifier_loss, epoch, f1, best_epoch, best_f1))
+        logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total transition loss for epoch: {}\n  Total gan loss for epoch: {}  Total classifier loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_transition_loss, epoch_gan_loss, epoch_classifier_loss, epoch, f1, best_epoch, best_f1))
 
 def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args):
     interval_starts = list(range(0, len(epoch_data), args['train_batch_size']))
     random.shuffle(interval_starts)
 
     epoch_transition_loss = 0.0
+    epoch_gan_loss = 0.0
     epoch_classifier_loss = 0.0
 
     model = trainer.model
@@ -440,6 +441,8 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
 
         batch = epoch_data[interval_start:interval_start+args['train_batch_size']]
         new_tc, new_ti, new_ru, ftu, batch_loss = train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, model_loss_function, args)
+
+        epoch_gan_loss += train_model_vs_classifier_one_batch(epoch, model, batch, model_loss_function, args)
 
         transitions_correct += new_tc
         transitions_incorrect += new_ti
@@ -463,12 +466,15 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
     if fake_transitions_used > 0:
         logger.info("Fake transitions used: %d", fake_transitions_used)
 
-    return epoch_transition_loss, total_correct, total_incorrect, epoch_classifier_loss
+    return epoch_transition_loss, total_correct, total_incorrect, epoch_classifier_loss, epoch_gan_loss
 
 def debug_weights(model, title):
     logger.info("%s: COL %s CRL %.5f", title,
                 ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
                 torch.linalg.norm(model.constituent_reduce_linear.weight).item())
+
+def train_model_vs_classifier_one_batch(epoch, model, batch, model_loss_function, args):
+    return 0.0
 
 def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args):
     """
