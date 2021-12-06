@@ -16,6 +16,7 @@ import logging
 import random
 import os
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -775,6 +776,58 @@ def classify_predictions(model, treebank, batch_size, args):
         num_correct += classify_prediction_batch(model, treebank[batch_start:batch_start+batch_size], args)
     logger.info("Classifier num correct: %d / %d (%.5f)", num_correct, len(treebank), num_correct / len(treebank))
 
+def classify_trees(model, treebank, batch_size, args):
+    """
+    Use the model to score a list of trees.
+
+    Splits the trees into batches.
+    Value returned will be the scores according to the given model.
+
+    treebank: a list of trees
+    """
+    sequences, _ = convert_trees_to_sequences([t for t in treebank], args['transition_scheme'], None)
+    classifications = []
+
+    for batch_start in tqdm(range(0, len(treebank), batch_size), leave=False):
+        batch_trees = treebank[batch_start:batch_start+batch_size]
+        batch_sequences = sequences[batch_start:batch_start+batch_size]
+        initial_states = parse_transitions.initial_state_from_gold_trees(batch_trees, model)
+        initial_states = [state._replace(gold_sequence=sequence)
+                          for sequence, state in zip(batch_sequences, initial_states)]
+        classifications.extend(classify_batch(model, initial_states))
+
+    return classifications
+
+def rerank_results(model, full_results, batch_size, args):
+    """
+    Use the model to rerank multiple sets of results.
+
+    The best result will be prepended to the start of each tree's predictions.
+    The predictions will all be appended in the given order.
+    In other words, the results will be one tree longer after calling this method.
+    """
+    scores = []
+    max_len = max(len(x.predictions) for x in full_results)
+    min_len = min(len(x.predictions) for x in full_results)
+    if min_len != max_len:
+        raise ValueError("Results do not line up as expected!")
+
+    scored_treebanks = []
+    for idx in range(max_len):
+        trees = [x.predictions[idx].tree for x in full_results]
+        scores = classify_trees(model, trees, batch_size, args)
+        trees = [ParsePrediction(tree, score.item()) for tree, score in zip(trees, scores)]
+        scored_treebanks.append(trees)
+
+    new_results = []
+    for original, parses in zip(full_results, zip(*scored_treebanks)):
+        gold = original.gold
+        scores = [p.score for p in parses]
+        best_idx = np.argmax(scores)
+        predictions = [parses[best_idx]] + list(parses)
+        new_results.append(ParseResult(gold, predictions))
+    return new_results
+
 @torch.no_grad()
 def run_dev_set(model, dev_trees, args):
     """
@@ -800,6 +853,7 @@ def run_dev_set(model, dev_trees, args):
 
         full_results = [ParseResult(parses[0].gold, [p.predictions[0] for p in parses])
                         for parses in zip(*generated_treebanks)]
+        full_results = rerank_results(model, full_results, args['eval_batch_size'], args)
 
     if len(treebank) < len(dev_trees):
         logger.warning("Only evaluating %d trees instead of %d", len(treebank), len(dev_trees))
