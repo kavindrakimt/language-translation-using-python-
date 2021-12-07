@@ -417,7 +417,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
             trainer.save(model_filename, save_optimizer=True)
         if model_latest_filename:
             trainer.save(model_latest_filename, save_optimizer=True)
-        logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total transition loss for epoch: {}\n  Total gan loss for epoch: {}  Total classifier loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_transition_loss, epoch_gan_loss, epoch_classifier_loss, epoch, f1, best_epoch, best_f1))
+        logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total transition loss for epoch: {}\n  Total gan loss for epoch: {}\n  Total classifier loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, transitions_correct, transitions_incorrect, epoch_transition_loss, epoch_gan_loss, epoch_classifier_loss, epoch, f1, best_epoch, best_f1))
 
 def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_function, classifier_loss_function, epoch_data, args):
     interval_starts = list(range(0, len(epoch_data), args['train_batch_size']))
@@ -496,9 +496,9 @@ def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_f
     pred_batch = [state._replace(gold_sequence=sequence)
                   for sequence, state, pred in zip(model_sequences, initial_states, pred_batch)
                   if pred.gold != pred.predictions[0].tree]
-    classifications.extend(classify_batch(model, pred_batch))
-
-    answers = torch.cat((answers, torch.zeros(len(pred_batch))))
+    if len(pred_batch) > 0:
+        classifications.extend(classify_batch(model, pred_batch))
+        answers = torch.cat((answers, torch.zeros(len(pred_batch))))
 
     # also do a set of random walk sentences as negative examples
     pred_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model, best=False)
@@ -506,10 +506,12 @@ def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_f
     pred_batch = [state._replace(gold_sequence=sequence)
                   for sequence, state, pred in zip(model_sequences, initial_states, pred_batch)
                   if pred.gold != pred.predictions[0].tree]
-    classifications.extend(classify_batch(model, pred_batch))
-    classifications = torch.stack(classifications)
+    if len(pred_batch) > 0:
+        classifications.extend(classify_batch(model, pred_batch))
+        answers = torch.cat((answers, torch.zeros(len(pred_batch))))
 
-    answers = torch.cat((answers, torch.zeros(len(pred_batch)))).to(device)
+    classifications = torch.stack(classifications)
+    answers = answers.to(device)
 
     batch_loss = classifier_loss_function(classifications, answers)
     batch_loss.backward()
@@ -625,7 +627,7 @@ def classify_batch(model, batch):
 
     finished_states = utils.unsort(finished_states, finished_indices)
     classification = model.classify(finished_states)
-    return classification.squeeze()
+    return classification
 
 def build_batch_from_states(batch_size, data_iterator, model):
     """
