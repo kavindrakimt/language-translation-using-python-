@@ -442,7 +442,7 @@ def train_model_one_epoch(epoch, trainer, transition_tensors, model_loss_functio
         batch = epoch_data[interval_start:interval_start+args['train_batch_size']]
         new_tc, new_ti, new_ru, ftu, batch_loss = train_model_one_batch(epoch, model, optimizer, batch, transition_tensors, model_loss_function, args)
 
-        epoch_gan_loss += train_model_vs_classifier_one_batch(epoch, model, batch, model_loss_function, args)
+        epoch_gan_loss += train_model_vs_classifier_one_batch(epoch, model, batch, classifier_loss_function, args)
 
         transitions_correct += new_tc
         transitions_incorrect += new_ti
@@ -473,8 +473,23 @@ def debug_weights(model, title):
                 ["%.5f / %.5f" % (torch.linalg.norm(x.weight).item(), torch.linalg.norm(x.bias).item()) for x in model.classifier_output_layers],
                 torch.linalg.norm(model.constituent_reduce_linear.weight).item())
 
-def train_model_vs_classifier_one_batch(epoch, model, batch, model_loss_function, args):
-    return 0.0
+def train_model_vs_classifier_one_batch(epoch, model, batch, classifier_loss_function, args):
+    initial_states = parse_transitions.initial_state_from_gold_trees([tree for tree, _ in batch], model)
+    pred_batch = parse_sentences(iter(initial_states), build_batch_from_states, len(initial_states), model)
+    model_sequences, _ = convert_trees_to_sequences([t.predictions[0].tree for t in pred_batch], args['transition_scheme'], None)
+    pred_batch = [state._replace(gold_sequence=sequence)
+                  for sequence, state, pred in zip(model_sequences, initial_states, pred_batch)
+                  if pred.gold != pred.predictions[0].tree]
+    if len(pred_batch) == 0:
+        return 0.0
+    classifications = classify_batch(model, pred_batch)
+    answers = torch.ones_like(classifications)
+
+    batch_loss = classifier_loss_function(classifications, answers)
+    batch_loss.backward()
+    batch_loss = batch_loss.item()
+
+    return batch_loss
 
 def train_classifier_one_batch(epoch, model, optimizer, batch, classifier_loss_function, args):
     """

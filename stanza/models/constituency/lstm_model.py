@@ -809,7 +809,7 @@ class LSTMModel(BaseModel, nn.Module):
 
         In other words, guess against itself
         """
-        return self.run_output_layers(states, self.classifier_output_layers)
+        return self.run_output_layers(states, self.classifier_output_layers).squeeze(1)
 
     def forward(self, states):
         """
