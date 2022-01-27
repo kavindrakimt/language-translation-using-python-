@@ -52,14 +52,10 @@ logger = logging.getLogger('stanza')
 WordNode = namedtuple("WordNode", ['value', 'hx'])
 TransitionNode = namedtuple("TransitionNode", ['value', 'output', 'lstm_hx', 'lstm_cx'])
 
-# Invariant: the tree_hx at the top of the constituency stack will have a
-# single dimension
-# We do this to maintain consistency between the different operations,
-# which sometimes result in different shapes
-# This will be unsqueezed in order to put into the next layer if needed
 # lstm_hx & lstm_cx are the hidden & cell states of the LSTM going across constituents
-ConstituentNode = namedtuple("ConstituentNode", ['value', 'tree_hx', 'lstm_hx', 'lstm_cx'])
-Constituent = namedtuple("Constituent", ['value', 'tree_hx'])
+# tree_hx and tree_cx are the states of the lstm going up the constituents in the case of the tree_lstm combination method
+ConstituentNode = namedtuple("ConstituentNode", ['value', 'lstm_hx', 'lstm_cx', 'tree_hx', 'tree_cx'])
+Constituent = namedtuple("Constituent", ['value', 'tree_hx', 'tree_cx'])
 
 # The sentence boundary vectors are marginally useful at best.
 # However, they make it much easier to use non-bert layers as input to
@@ -136,9 +132,20 @@ class SentenceBoundary(Enum):
 #   embedding resulted in 0.8973
 # long story short, this looks like an idea that should work, but it
 #   doesn't help.  suggestions welcome for improving these results
+#
+# The current TREE_LSTM mechanism uses a word's embedding
+#   as the hx and a trained embedding over tags as the cx    0.8996
+# This worked slightly better than 0s for cx                 0.8992
+# A variant of TREE_LSTM which didn't work out:
+#   nodes are combined with an LSTM
+#   hx & cx are embeddings of the node type (eg S, NP, etc)
+#   input is the max over children:                          0.8977
+# Another variant which didn't work: use the word embedding
+#   as input to the same LSTM to get hx & cx                 0.8985
 class ConstituencyComposition(Enum):
     BILSTM                = 1
     MAX                   = 2
+    TREE_LSTM             = 3
     BILSTM_MAX            = 4
     BIGRAM                = 5
     ATTN                  = 6
@@ -247,12 +254,14 @@ class LSTMModel(BaseModel, nn.Module):
             self.register_buffer('tag_tensors', torch.tensor(range(len(self.tags) + 2), requires_grad=False))
 
         self.num_lstm_layers = self.args['num_lstm_layers']
+        self.num_tree_lstm_layers = self.args['num_tree_lstm_layers']
         self.lstm_layer_dropout = self.args['lstm_layer_dropout']
 
         # also register a buffer of zeros so that we can always get zeros on the appropriate device
-        self.register_buffer('word_zeros', torch.zeros(self.hidden_size))
+        self.register_buffer('word_zeros', torch.zeros(self.hidden_size * self.num_tree_lstm_layers))
         self.register_buffer('transition_zeros', torch.zeros(self.num_lstm_layers, 1, self.transition_hidden_size))
         self.register_buffer('constituent_zeros', torch.zeros(self.num_lstm_layers, 1, self.hidden_size))
+        self.register_buffer('word_constituent_zeros', torch.zeros(self.num_tree_lstm_layers, self.hidden_size))
 
         # possibly add a couple vectors for bookends of the sentence
         # We put the word_start and word_end here, AFTER counting the
@@ -335,7 +344,7 @@ class LSTMModel(BaseModel, nn.Module):
         # after putting the word_delta_tag input through the word_lstm, we get back
         # hidden_size * 2 output with the front and back lstms concatenated.
         # this transforms it into hidden_size with the values mixed together
-        self.word_to_constituent = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        self.word_to_constituent = nn.Linear(self.hidden_size * 2, self.hidden_size * self.num_tree_lstm_layers)
         initialize_linear(self.word_to_constituent, self.args['nonlinearity'], self.hidden_size * 2)
 
         self.transitions = sorted(list(transitions))
@@ -397,6 +406,8 @@ class LSTMModel(BaseModel, nn.Module):
             initialize_linear(self.reduce_bigram, self.args['nonlinearity'], self.hidden_size)
         elif self.constituency_composition == ConstituencyComposition.ATTN:
             self.reduce_attn = nn.MultiheadAttention(self.hidden_size, self.reduce_heads)
+        elif self.constituency_composition == ConstituencyComposition.TREE_LSTM:
+            self.constituent_reduce_lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=self.num_tree_lstm_layers, dropout=self.lstm_layer_dropout)
         else:
             raise ValueError("Unhandled ConstituencyComposition: {}".format(self.constituency_composition))
 
@@ -448,10 +459,10 @@ class LSTMModel(BaseModel, nn.Module):
         Middle layer sizes are self.hidden_size
         """
         middle_layers = num_output_layers - 1
-        # word_lstm:        hidden_size
+        # word_lstm:        hidden_size * num_tree_lstm_layers
         # transition_lstm:  transition_hidden_size
         # constituent_lstm: hidden_size
-        predict_input_size = [self.hidden_size * 2 + self.transition_hidden_size] + [self.hidden_size] * middle_layers
+        predict_input_size = [self.hidden_size + self.hidden_size * self.num_tree_lstm_layers + self.transition_hidden_size] + [self.hidden_size] * middle_layers
         predict_output_size = [self.hidden_size] * middle_layers + [final_layer_size]
         output_layers = nn.ModuleList([nn.Linear(input_size, output_size)
                                        for input_size, output_size in zip(predict_input_size, predict_output_size)])
@@ -626,7 +637,9 @@ class LSTMModel(BaseModel, nn.Module):
             constituent_start = self.constituent_zeros[-1, 0, :]
             hx = self.constituent_zeros
             cx = self.constituent_zeros
-        return TreeStack(value=ConstituentNode(None, constituent_start, hx, cx), parent=None, length=1)
+        tree_hx = self.constituent_zeros[-1, 0, :]
+        tree_cx = self.constituent_zeros[-1, 0, :]
+        return TreeStack(value=ConstituentNode(None, hx, cx, tree_hx, tree_cx), parent=None, length=1)
 
     def get_word(self, word_node):
         return word_node.value
@@ -634,13 +647,17 @@ class LSTMModel(BaseModel, nn.Module):
     def transform_word_to_constituent(self, state):
         word_node = state.word_queue[state.word_position]
         word = word_node.value
-        return Constituent(value=word, tree_hx=word_node.hx)
+        if self.constituency_composition == ConstituencyComposition.TREE_LSTM:
+            return Constituent(word, word_node.hx.view(self.num_tree_lstm_layers, self.hidden_size), self.word_constituent_zeros)
+        else:
+            return Constituent(word, word_node.hx[:self.hidden_size].unsqueeze(0), None)
 
     def dummy_constituent(self, dummy):
         label = dummy.label
         open_index = self.constituent_open_tensors[self.constituent_open_map[label]]
         hx = self.dummy_embedding(open_index)
-        return Constituent(value=dummy, tree_hx=hx)
+        # the cx doesn't matter: the dummy will be discarded when building a new constituent
+        return Constituent(dummy, hx.unsqueeze(0), None)
 
     def unary_transform(self, constituents, labels):
         # TODO: this can be faster by stacking things
@@ -659,11 +676,11 @@ class LSTMModel(BaseModel, nn.Module):
         children_lists is a list of children that go under each of the new nodes
         lists of each are used so that we can stack operations
         """
-        node_hx = [[child.tree_hx for child in children] for children in children_lists]
-
         if (self.constituency_composition == ConstituencyComposition.BILSTM or
             self.constituency_composition == ConstituencyComposition.BILSTM_MAX):
+            node_hx = [[child.tree_hx.squeeze(0) for child in children] for children in children_lists]
             label_hx = [self.constituent_open_embedding(self.constituent_open_tensors[self.constituent_open_map[label]]) for label in labels]
+
             max_length = max(len(children) for children in children_lists)
             zeros = torch.zeros(self.hidden_size, device=label_hx[0].device)
             # weirdly, this is faster than using pack_sequence
@@ -688,33 +705,63 @@ class LSTMModel(BaseModel, nn.Module):
                 lstm_output = [lstm_output[1:length-1, x, :] for x, length in zip(range(len(lstm_lengths)), lstm_lengths)]
                 lstm_output = torch.stack([torch.max(x, 0).values for x in lstm_output], axis=0)
                 hx = self.reduce_forward(lstm_output[:, :self.hidden_size]) + self.reduce_backward(lstm_output[:, self.hidden_size:])
+            lstm_hx = self.nonlinearity(hx).unsqueeze(0)
+            lstm_cx = None
         elif self.constituency_composition == ConstituencyComposition.MAX:
+            node_hx = [[child.tree_hx for child in children] for children in children_lists]
             unpacked_hx = [self.lstm_input_dropout(torch.max(torch.stack(nhx), 0).values) for nhx in node_hx]
-            packed_hx = torch.stack(unpacked_hx, axis=0)
+            packed_hx = torch.stack(unpacked_hx, axis=1)
             hx = self.reduce_linear(packed_hx)
+            lstm_hx = self.nonlinearity(hx)
+            lstm_cx = None
         elif self.constituency_composition == ConstituencyComposition.BIGRAM:
+            node_hx = [[child.tree_hx for child in children] for children in children_lists]
             unpacked_hx = []
             for nhx in node_hx:
                 # tanh or otherwise limit the size of the output?
-                stacked_nhx = self.lstm_input_dropout(torch.stack(nhx))
+                stacked_nhx = self.lstm_input_dropout(torch.cat(nhx, axis=0))
                 if stacked_nhx.shape[0] > 1:
                     bigram_hx = torch.cat((stacked_nhx[:-1, :], stacked_nhx[1:, :]), axis=1)
                     bigram_hx = self.reduce_bigram(bigram_hx) / 2
                     stacked_nhx = torch.cat((stacked_nhx, bigram_hx), axis=0)
                 unpacked_hx.append(torch.max(stacked_nhx, 0).values)
-            packed_hx = torch.stack(unpacked_hx, axis=0)
+            packed_hx = torch.stack(unpacked_hx, axis=0).unsqueeze(0)
             hx = self.reduce_linear(packed_hx)
+            lstm_hx = self.nonlinearity(hx)
+            lstm_cx = None
         elif self.constituency_composition == ConstituencyComposition.ATTN:
+            node_hx = [[child.tree_hx for child in children] for children in children_lists]
             label_hx = [self.constituent_open_embedding(self.constituent_open_tensors[self.constituent_open_map[label]]) for label in labels]
-            unpacked_hx = [torch.stack(nhx).unsqueeze(1) for nhx in node_hx]
+            unpacked_hx = [torch.stack(nhx) for nhx in node_hx]
             unpacked_hx = [torch.cat((lhx.unsqueeze(0).unsqueeze(0), nhx), axis=0) for lhx, nhx in zip(label_hx, unpacked_hx)]
             unpacked_hx = [self.reduce_attn(nhx, nhx, nhx)[0].squeeze(1) for nhx in unpacked_hx]
             unpacked_hx = [self.lstm_input_dropout(torch.max(nhx, 0).values) for nhx in unpacked_hx]
             hx = torch.stack(unpacked_hx, axis=0)
+            lstm_hx = self.nonlinearity(hx).unsqueeze(0)
+            lstm_cx = None
+        elif self.constituency_composition == ConstituencyComposition.TREE_LSTM:
+            node_hx = [[child.tree_hx for child in children] for children in children_lists]
+            label_hx = [self.lstm_input_dropout(self.constituent_open_embedding(self.constituent_open_tensors[self.constituent_open_map[label]])) for label in labels]
+            label_hx = torch.stack(label_hx).unsqueeze(0)
+
+            max_length = max(len(children) for children in children_lists)
+            zeros = self.word_constituent_zeros
+
+            # stacking will let us do elementwise multiplication faster, hopefully
+            node_hx = [[child.tree_hx for child in children] for children in children_lists]
+            unpacked_hx = [self.lstm_input_dropout(torch.stack(nhx)) for nhx in node_hx]
+            unpacked_hx = [nhx.max(dim=0) for nhx in unpacked_hx]
+            packed_hx = torch.stack([nhx.values for nhx in unpacked_hx], axis=1)
+            #packed_hx = packed_hx.max(dim=0).values
+
+            node_cx = [torch.stack([child.tree_cx for child in children]) for children in children_lists]
+            node_cx_indices = [uhx.indices.unsqueeze(0) for uhx in unpacked_hx]
+            unpacked_cx = [ncx.gather(0, nci).squeeze(0) for ncx, nci in zip(node_cx, node_cx_indices)]
+            packed_cx = torch.stack(unpacked_cx, axis=1)
+
+            _, (lstm_hx, lstm_cx) = self.constituent_reduce_lstm(label_hx, (packed_hx, packed_cx))
         else:
             raise ValueError("Unhandled ConstituencyComposition: {}".format(self.constituency_composition))
-
-        hx = self.nonlinearity(hx)
 
         constituents = []
         for idx, (label, children) in enumerate(zip(labels, children_lists)):
@@ -725,14 +772,14 @@ class LSTMModel(BaseModel, nn.Module):
                 for value in reversed(label):
                     node = Tree(label=value, children=children)
                     children = node
-            constituents.append(Constituent(value=node, tree_hx=hx[idx, :]))
+            constituents.append(Constituent(node, lstm_hx[:, idx, :], lstm_cx[:, idx, :] if lstm_cx is not None else None))
         return constituents
 
     def push_constituents(self, constituent_stacks, constituents):
         current_nodes = [stack.value for stack in constituent_stacks]
 
-        constituent_input = torch.stack([x.tree_hx for x in constituents])
-        constituent_input = constituent_input.unsqueeze(0)
+        constituent_input = torch.stack([x.tree_hx[-1:] for x in constituents], axis=1)
+        #constituent_input = constituent_input.unsqueeze(0)
         constituent_input = self.lstm_input_dropout(constituent_input)
 
         hx = torch.cat([current_node.lstm_hx for current_node in current_nodes], axis=1)
@@ -747,7 +794,7 @@ class LSTMModel(BaseModel, nn.Module):
         # averaged over 5 trials, had the following loss in accuracy:
         # 150 epochs: 0.8971 to 0.8953
         # 200 epochs: 0.8985 to 0.8964
-        new_stacks = [stack.push(ConstituentNode(constituent.value, constituents[i].tree_hx, hx[:, i:i+1, :], cx[:, i:i+1, :]))
+        new_stacks = [stack.push(ConstituentNode(constituent.value, hx[:, i:i+1, :], cx[:, i:i+1, :], constituent.tree_hx, constituent.tree_cx))
                       for i, (stack, constituent) in enumerate(zip(constituent_stacks, constituents))]
         return new_stacks
 
