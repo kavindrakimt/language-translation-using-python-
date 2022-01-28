@@ -456,6 +456,25 @@ class LSTMModel(BaseModel, nn.Module):
                 lines.append("%s %.6g" % (name, torch.norm(param).item()))
         logger.info("\n".join(lines))
 
+    def is_low_decay_parameter(self, name):
+        #if name.find("_embedding") >= 0:
+        #    return True
+        #if name.startswith("partitioned_transformer_module"):
+        #    return True
+        #if name.find(".bias") >= 0:
+        #    return True
+        if name.find(".norm") >= 0 or name.find(".layer_norm") >= 0:
+            return True
+        return False
+
+    def base_parameters(self):
+        params = [param for name, param in self.named_parameters() if not self.is_low_decay_parameter(name)]
+        return params
+
+    def low_decay_parameters(self):
+        params = [param for name, param in self.named_parameters() if self.is_low_decay_parameter(name)]
+        return params
+
     def initial_word_queues(self, tagged_word_lists):
         """
         Produce initial word queues out of the model's LSTMs for use in the tagged word lists.
