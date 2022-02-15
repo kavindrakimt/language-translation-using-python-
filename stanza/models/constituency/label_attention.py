@@ -6,6 +6,8 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.init as init
 
+from stanza.models.constituency.positional_encoding import ConcatSinusoidalEncoding
+
 # publicly available versions alternate between torch.uint8 and torch.bool,
 # but that is for older versions of torch anyway
 DTYPE = torch.bool
@@ -641,7 +643,9 @@ class LabelAttentionModule(nn.Module):
         super().__init__()
         self.ff_dim = d_proj * d_l
 
-        self.label_attention = LabelAttention(d_model,
+        self.label_timing = ConcatSinusoidalEncoding(d_model=d_positional)
+
+        self.label_attention = LabelAttention(d_model + d_positional,
                                               d_k,
                                               d_v,
                                               d_l,
@@ -668,6 +672,7 @@ class LabelAttentionModule(nn.Module):
 
     def forward(self, word_embeddings, tagged_word_lists):
         # Extract Labeled Representation
+        word_embeddings = [self.label_timing(sentence.unsqueeze(0)).squeeze(0) for sentence in word_embeddings]
         packed_len = sum(sentence.shape[0] for sentence in word_embeddings)
         batch_idxs = np.zeros(packed_len, dtype=int)
 
@@ -703,4 +708,3 @@ class LabelAttentionModule(nn.Module):
             final_labeled_representations[idx]  = torch.stack(representation)
 
         return final_labeled_representations
-

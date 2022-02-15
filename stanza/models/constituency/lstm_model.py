@@ -303,27 +303,21 @@ class LSTMModel(BaseModel, nn.Module):
 
         self.label_attention_module = None
         if self.args.get('lattn_d_proj', 0) > 0 and self.args.get('lattn_d_l', 0) > 0:
-            if self.partitioned_transformer_module is None:
-                logger.error("Not using Labeled Attention, as the Partitioned Attention module is not used")
-            else:
-                # TODO: think of a couple ways to use alternate inputs
-                # for example, could pass in the word inputs with a positional embedding
-                # that would also allow it to work in the case of no partitioned module
-                self.label_attention_module = LabelAttentionModule(self.pattn_d_model,
-                                                                   self.args['lattn_d_kv'],
-                                                                   self.args['lattn_d_kv'],
-                                                                   self.args['lattn_d_l'],
-                                                                   self.args['lattn_d_proj'],
-                                                                   self.args['lattn_combine_as_self'],
-                                                                   self.args['lattn_resdrop'],
-                                                                   self.args['lattn_q_as_matrix'],
-                                                                   self.args['lattn_residual_dropout'],
-                                                                   self.args['lattn_attention_dropout'],
-                                                                   self.pattn_d_model // 2,
-                                                                   self.args['lattn_d_ff'],
-                                                                   self.args['lattn_relu_dropout'],
-                                                                   self.args['lattn_partitioned'])
-                self.word_input_size = self.word_input_size + self.args['lattn_d_proj']*self.args['lattn_d_l']
+            self.label_attention_module = LabelAttentionModule(self.word_input_size,
+                                                               self.args['lattn_d_kv'],
+                                                               self.args['lattn_d_kv'],
+                                                               self.args['lattn_d_l'],
+                                                               self.args['lattn_d_proj'],
+                                                               self.args['lattn_combine_as_self'],
+                                                               self.args['lattn_resdrop'],
+                                                               self.args['lattn_q_as_matrix'],
+                                                               self.args['lattn_residual_dropout'],
+                                                               self.args['lattn_attention_dropout'],
+                                                               self.args['lattn_d_positional'],
+                                                               self.args['lattn_d_ff'],
+                                                               self.args['lattn_relu_dropout'],
+                                                               self.args['lattn_partitioned'])
+            self.word_input_size = self.word_input_size + self.args['lattn_d_proj']*self.args['lattn_d_l']
 
         self.word_lstm = nn.LSTM(input_size=self.word_input_size, hidden_size=self.hidden_size, num_layers=self.num_lstm_layers, bidirectional=True, dropout=self.lstm_layer_dropout)
 
@@ -538,7 +532,7 @@ class LSTMModel(BaseModel, nn.Module):
 
         # Extract Labeled Representation
         if self.label_attention_module is not None:
-            labeled_representations = self.label_attention_module(partitioned_embeddings, tagged_word_lists)
+            labeled_representations = self.label_attention_module(all_word_inputs, tagged_word_lists)
             all_word_inputs = [torch.cat((x, y[:x.shape[0], :]), axis=1) for x, y in zip(all_word_inputs, labeled_representations)]
 
         all_word_inputs = [self.word_dropout(word_inputs) for word_inputs in all_word_inputs]
