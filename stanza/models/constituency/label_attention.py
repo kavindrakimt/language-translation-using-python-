@@ -626,6 +626,7 @@ class LabelAttentionModule(nn.Module):
     """
     #
     def __init__(self,
+                 d_input,
                  d_model,
                  d_k,
                  d_v,
@@ -643,6 +644,7 @@ class LabelAttentionModule(nn.Module):
         super().__init__()
         self.ff_dim = d_proj * d_l
 
+        self.label_attention_projection = nn.Linear(d_input, d_model, bias=False)
         self.label_timing = ConcatSinusoidalEncoding(d_model=d_positional)
 
         self.label_attention = LabelAttention(d_model + d_positional,
@@ -672,7 +674,7 @@ class LabelAttentionModule(nn.Module):
 
     def forward(self, word_embeddings, tagged_word_lists):
         # Extract Labeled Representation
-        word_embeddings = [self.label_timing(sentence.unsqueeze(0)).squeeze(0) for sentence in word_embeddings]
+        word_embeddings = [self.label_timing(self.label_attention_projection(sentence).unsqueeze(0)).squeeze(0) for sentence in word_embeddings]
         packed_len = sum(sentence.shape[0] for sentence in word_embeddings)
         batch_idxs = np.zeros(packed_len, dtype=int)
 
