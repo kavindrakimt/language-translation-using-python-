@@ -50,7 +50,7 @@ from stanza.models.constituency.utils import build_nonlinearity, initialize_line
 logger = logging.getLogger('stanza')
 
 WordNode = namedtuple("WordNode", ['value', 'hx'])
-TransitionNode = namedtuple("TransitionNode", ['value', 'output', 'lstm_hx', 'lstm_cx'])
+TransitionNode = namedtuple("TransitionNode", ['value', 'input', 'output', 'lstm_hx', 'lstm_cx'])
 
 # Invariant: the tree_hx at the top of the constituency stack will have a
 # single dimension
@@ -346,8 +346,8 @@ class LSTMModel(BaseModel, nn.Module):
                                                  embedding_dim = self.transition_embedding_dim)
         nn.init.normal_(self.transition_embedding.weight, std=0.25)
         if self.sentence_boundary_vectors is SentenceBoundary.EVERYTHING:
-            self.register_parameter('transition_start_embedding', torch.nn.Parameter(0.2 * torch.randn(1, 1, self.transition_hidden_size, requires_grad=True)))
-        self.transition_lstm = nn.LSTM(input_size=self.transition_embedding_dim, hidden_size=self.transition_hidden_size, num_layers=self.num_lstm_layers, dropout=self.lstm_layer_dropout)
+            self.register_parameter('transition_start_embedding', torch.nn.Parameter(0.2 * torch.randn(1, 1, self.transition_hidden_size * 2, requires_grad=True)))
+        self.transition_lstm = nn.LSTM(input_size=self.transition_embedding_dim*2, hidden_size=self.transition_hidden_size, num_layers=self.num_lstm_layers, dropout=self.lstm_layer_dropout)
 
         self.constituent_opens = sorted(list(constituent_opens))
         # an embedding for the spot on the constituent LSTM taken up by the Open transitions
@@ -605,14 +605,15 @@ class LSTMModel(BaseModel, nn.Module):
         The subsequent batch built this way will be used for batch_size trees
         """
         if self.sentence_boundary_vectors is SentenceBoundary.EVERYTHING:
-            transition_start = self.transition_start_embedding
-            output, (hx, cx) = self.transition_lstm(transition_start)
+            transition_prev = self.transition_start_embedding[0, 0, :self.transition_hidden_size]
+            output, (hx, cx) = self.transition_lstm(self.transition_start_embedding)
             transition_start = output[0, 0, :]
         else:
+            transition_prev = self.transition_zeros[-1, 0, :]
             transition_start = self.transition_zeros[-1, 0, :]
             hx = self.transition_zeros
             cx = self.transition_zeros
-        return TreeStack(value=TransitionNode(None, transition_start, hx, cx), parent=None, length=1)
+        return TreeStack(value=TransitionNode(None, transition_prev, transition_start, hx, cx), parent=None, length=1)
 
     def initial_constituents(self):
         """
@@ -767,13 +768,15 @@ class LSTMModel(BaseModel, nn.Module):
         Significantly faster than doing one transition at a time.
         """
         transition_idx = torch.stack([self.transition_tensors[self.transition_map[transition]] for transition in transitions])
-        transition_input = self.transition_embedding(transition_idx).unsqueeze(0)
+        transition_emb = self.transition_embedding(transition_idx).unsqueeze(0)
+        transition_prev = torch.stack([t.value.input for t in transition_stacks], axis=0).unsqueeze(0)
+        transition_input = torch.cat((transition_emb, transition_prev), axis=2)
         transition_input = self.lstm_input_dropout(transition_input)
 
         hx = torch.cat([t.value.lstm_hx for t in transition_stacks], axis=1)
         cx = torch.cat([t.value.lstm_cx for t in transition_stacks], axis=1)
         output, (hx, cx) = self.transition_lstm(transition_input, (hx, cx))
-        new_stacks = [stack.push(TransitionNode(transition, output[0, i, :], hx[:, i:i+1, :], cx[:, i:i+1, :]))
+        new_stacks = [stack.push(TransitionNode(transition, transition_emb[0, i, :], output[0, i, :], hx[:, i:i+1, :], cx[:, i:i+1, :]))
                       for i, (stack, transition) in enumerate(zip(transition_stacks, transitions))]
         return new_stacks
 
