@@ -346,7 +346,7 @@ class LSTMModel(BaseModel, nn.Module):
                                                  embedding_dim = self.transition_embedding_dim)
         nn.init.normal_(self.transition_embedding.weight, std=0.25)
         if self.sentence_boundary_vectors is SentenceBoundary.EVERYTHING:
-            self.register_parameter('transition_start_embedding', torch.nn.Parameter(0.2 * torch.randn(self.transition_hidden_size, requires_grad=True)))
+            self.register_parameter('transition_start_embedding', torch.nn.Parameter(0.2 * torch.randn(1, 1, self.transition_hidden_size, requires_grad=True)))
         self.transition_lstm = nn.LSTM(input_size=self.transition_embedding_dim, hidden_size=self.transition_hidden_size, num_layers=self.num_lstm_layers, dropout=self.lstm_layer_dropout)
 
         self.constituent_opens = sorted(list(constituent_opens))
@@ -605,7 +605,7 @@ class LSTMModel(BaseModel, nn.Module):
         The subsequent batch built this way will be used for batch_size trees
         """
         if self.sentence_boundary_vectors is SentenceBoundary.EVERYTHING:
-            transition_start = self.transition_start_embedding.unsqueeze(0).unsqueeze(0)
+            transition_start = self.transition_start_embedding
             output, (hx, cx) = self.transition_lstm(transition_start)
             transition_start = output[0, 0, :]
         else:
