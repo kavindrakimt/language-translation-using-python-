@@ -240,13 +240,12 @@ def remove_optimizer(args, model_save_file, model_load_file):
     trainer = Trainer.load(model_load_file, pt, args=load_args, load_optimizer=False)
     trainer.save(model_save_file)
 
-def convert_trees_to_sequences(trees, tree_type, transition_scheme):
+def convert_trees_to_sequences(trees, tree_type, transition_scheme, known_tags):
     logger.info("Building {} transition sequences".format(tree_type))
     if logger.getEffectiveLevel() <= logging.INFO:
         trees = tqdm(trees)
-    sequences = transition_sequence.build_treebank(trees, transition_scheme)
-    transitions = transition_sequence.all_transitions(sequences)
-    return sequences, transitions
+    sequences = transition_sequence.build_treebank(trees, transition_scheme, known_tags)
+    return sequences
 
 def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer):
     """
@@ -271,8 +270,15 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
 
     unary_limit = max(max(t.count_unary_depth() for t in train_trees),
                       max(t.count_unary_depth() for t in dev_trees)) + 1
-    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'])
-    dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'])
+    train_sequences = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'], tags)
+    # the training transitions will all be labeled with the tags
+    # currently we are just checking correctness
+    # we add an unlabeled Shift so that the model can represent previously unseen tags
+    # at train time we will redo some tags as <UNK> to train the unlabeled Shift
+    # (this also will essentially be a form of dropout)
+    train_transitions = transition_sequence.all_transitions(train_sequences + [[parse_transitions.Shift()]])
+    dev_sequences = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'], tags)
+    dev_transitions = transition_sequence.all_transitions(dev_sequences)
 
     logger.info("Total unique transitions in train set: %d", len(train_transitions))
     logger.info("Unique transitions in training set: %s", train_transitions)
@@ -512,7 +518,7 @@ def train_model_one_batch(epoch, batch_idx, model, batch, transition_tensors, mo
     # the state is build as a bulk operation
     gold_trees = [x.tree.dropout_tags(args['tag_dropout']) for x in batch]
     preterminals = [list(x.yield_preterminals()) for x in gold_trees]
-    train_sequences = transition_sequence.build_treebank(gold_trees, args['transition_scheme'])
+    train_sequences = transition_sequence.build_treebank(gold_trees, args['transition_scheme'], model.tags)
     initial_states = parse_transitions.initial_state_from_preterminals(preterminals, model, gold_trees)
     batch = [state._replace(gold_sequence=sequence)
              for sequence, state in zip(train_sequences, initial_states)]

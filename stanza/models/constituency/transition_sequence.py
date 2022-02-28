@@ -7,7 +7,7 @@ Supports multiple transition schemes - TOP_DOWN and variants, IN_ORDER
 from stanza.models.constituency.parse_transitions import Shift, CompoundUnary, OpenConstituent, CloseConstituent, TransitionScheme
 from stanza.models.constituency.tree_reader import read_trees
 
-def yield_top_down_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UNARY):
+def yield_top_down_sequence(tree, known_tags, transition_scheme=TransitionScheme.TOP_DOWN_UNARY):
     """
     For tree (X A B C D), yield Open(X) A B C D Close
 
@@ -18,7 +18,11 @@ def yield_top_down_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UN
       TOP_DOWN:          (Y (X ...)) -> Open(Y) Open(X) ... Close Close
     """
     if tree.is_preterminal():
-        yield Shift()
+        tag = tree.label
+        if tag in known_tags:
+            yield Shift(tag)
+        else:
+            yield Shift()
         return
 
     if tree.is_leaf():
@@ -30,7 +34,7 @@ def yield_top_down_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UN
             while not tree.is_preterminal() and len(tree.children) == 1:
                 labels.append(tree.label)
                 tree = tree.children[0]
-            for transition in yield_top_down_sequence(tree, transition_scheme):
+            for transition in yield_top_down_sequence(tree, known_tags, transition_scheme):
                 yield transition
             yield CompoundUnary(labels)
             return
@@ -44,46 +48,54 @@ def yield_top_down_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UN
     else:
         yield OpenConstituent(tree.label)
     for child in tree.children:
-        for transition in yield_top_down_sequence(child, transition_scheme):
+        for transition in yield_top_down_sequence(child, known_tags, transition_scheme):
             yield transition
     yield CloseConstituent()
 
-def yield_in_order_sequence(tree):
+def yield_in_order_sequence(tree, known_tags):
     """
     For tree (X A B C D), yield A Open(X) B C D Close
     """
     if tree.is_preterminal():
-        yield Shift()
+        tag = tree.label
+        if tag in known_tags:
+            yield Shift(tag)
+        else:
+            yield Shift()
         return
 
     if tree.is_leaf():
         return
 
-    for transition in yield_in_order_sequence(tree.children[0]):
+    for transition in yield_in_order_sequence(tree.children[0], known_tags):
         yield transition
 
     yield OpenConstituent(tree.label)
 
     for child in tree.children[1:]:
-        for transition in yield_in_order_sequence(child):
+        for transition in yield_in_order_sequence(child, known_tags):
             yield transition
 
     yield CloseConstituent()
 
-def build_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UNARY):
+def build_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UNARY, known_tags=None):
     """
     Turn a single tree into a list of transitions based on the TransitionScheme
     """
+    if known_tags is None:
+        known_tags = set()
     if transition_scheme is TransitionScheme.IN_ORDER:
-        return list(yield_in_order_sequence(tree))
+        return list(yield_in_order_sequence(tree, known_tags))
     else:
-        return list(yield_top_down_sequence(tree, transition_scheme))
+        return list(yield_top_down_sequence(tree, known_tags, transition_scheme))
 
-def build_treebank(trees, transition_scheme=TransitionScheme.TOP_DOWN_UNARY):
+def build_treebank(trees, transition_scheme=TransitionScheme.TOP_DOWN_UNARY, known_tags=None):
     """
     Turn each of the trees in the treebank into a list of transitions based on the TransitionScheme
     """
-    return [build_sequence(tree, transition_scheme) for tree in trees]
+    if known_tags is None:
+        known_tags = set()
+    return [build_sequence(tree, transition_scheme, known_tags) for tree in trees]
 
 def all_transitions(transition_lists):
     """
