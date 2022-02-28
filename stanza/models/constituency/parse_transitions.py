@@ -97,6 +97,12 @@ class State(namedtuple('State', ['word_queue', 'transitions', 'constituents', 'g
     def all_words(self, model):
         return [model.get_word(x) for x in self.word_queue]
 
+    def next_tagged_word(self, model):
+        """
+        Returns a preterminal Tree, eg, has a tag node and word child node
+        """
+        return model.get_word(self.word_queue[self.word_position])
+
     def to_string(self, model):
         return "State(\n  buffer:%s\n  transitions:%s\n  constituents:%s\n  word_position:%d num_opens:%d)" % (str(self.all_words(model)), str(self.all_transitions(model)), str(self.all_constituents(model)), self.word_position, self.num_opens)
 
@@ -191,6 +197,12 @@ class Transition(ABC):
         # put the Shift at the front of a list, and otherwise sort alphabetically
         if self == other:
             return False
+        if isinstance(self, Shift) and isinstance(other, Shift):
+            if other.label is None:
+                return False
+            if self.label is None:
+                return True
+            return self.label < other.label
         if isinstance(self, Shift):
             return True
         if isinstance(other, Shift):
@@ -198,6 +210,9 @@ class Transition(ABC):
         return str(self) < str(other)
 
 class Shift(Transition):
+    def __init__(self, label=None):
+        self.label = label
+
     def update_state(self, state, model):
         """
         This will handle all aspects of a shift transition
@@ -213,6 +228,8 @@ class Shift(Transition):
         Disallow shifting when the word queue is empty or there are no opens to eventually eat this word
         """
         if state.empty_word_queue():
+            return False
+        if self.label is not None and self.label != state.next_tagged_word(model).children[0].label:
             return False
         if model.is_top_down():
             # top down transition sequences cannot shift if there are currently no
@@ -251,16 +268,20 @@ class Shift(Transition):
         return "Shift"
 
     def __repr__(self):
+        if self.label is not None:
+            return "Shift(%s)" % self.label
         return "Shift"
 
     def __eq__(self, other):
         if self is other:
             return True
         if isinstance(other, Shift):
-            return True
+            return self.label == other.label
         return False
 
     def __hash__(self):
+        if self.label:
+            return hash(self.label) + 37
         return hash(37)
 
 class CompoundUnary(Transition):

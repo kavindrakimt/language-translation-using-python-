@@ -117,3 +117,28 @@ def test_chinese_tree():
 
     redone = reconstruct_tree(trees[0], transitions[0], transition_scheme=TransitionScheme.IN_ORDER, unary_limit=6)
     assert redone == trees[0]
+
+def test_labeled_shift():
+    """
+    Test that both inorder and preorder transition lists are produced with labeled shifts
+    """
+    trees = tree_reader.read_trees(CHINESE_LONG_LIST_TREE)
+
+    words = trees[0].leaf_labels()
+    common_words = set([words[0], words[2]])
+
+    transitions = transition_sequence.build_treebank(trees, common_words=common_words, transition_scheme=TransitionScheme.TOP_DOWN)
+    redone = reconstruct_tree(trees[0], transitions[0], transition_scheme=TransitionScheme.TOP_DOWN)
+    assert redone == trees[0]
+    shift_transitions = set([x for x in transitions[0] if isinstance(x, Shift)])
+    assert len(shift_transitions) > 1
+
+    transitions = transition_sequence.build_treebank(trees, common_words=None, transition_scheme=TransitionScheme.TOP_DOWN)
+    shift_transitions = set([x for x in transitions[0] if isinstance(x, Shift)])
+    assert len(shift_transitions) == 1
+
+    transitions = transition_sequence.build_treebank(trees, common_words=common_words, transition_scheme=TransitionScheme.IN_ORDER)
+    redone = reconstruct_tree(trees[0], transitions[0], transition_scheme=TransitionScheme.IN_ORDER, unary_limit=6)
+    assert redone == trees[0]
+    shift_transitions = set([x for x in transitions[0] if isinstance(x, Shift)])
+    assert len(shift_transitions) > 1

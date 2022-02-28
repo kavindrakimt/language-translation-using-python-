@@ -351,6 +351,7 @@ class Tree(StanzaObject):
         threshold = max(int(len(words) * threshold), 1)
         return sorted(x[0] for x in words.most_common()[:-threshold-1:-1])
 
+
     @staticmethod
     def get_root_labels(trees):
         return sorted(set(x.label for x in trees))

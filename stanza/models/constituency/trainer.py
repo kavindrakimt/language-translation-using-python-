@@ -240,11 +240,11 @@ def remove_optimizer(args, model_save_file, model_load_file):
     trainer = Trainer.load(model_load_file, pt, args=load_args, load_optimizer=False)
     trainer.save(model_save_file)
 
-def convert_trees_to_sequences(trees, tree_type, transition_scheme):
+def convert_trees_to_sequences(trees, tree_type, transition_scheme, common_words):
     logger.info("Building {} transition sequences".format(tree_type))
     if logger.getEffectiveLevel() <= logging.INFO:
         trees = tqdm(trees)
-    sequences = transition_sequence.build_treebank(trees, transition_scheme)
+    sequences = transition_sequence.build_treebank(trees, transition_scheme, common_words)
     transitions = transition_sequence.all_transitions(sequences)
     return sequences, transitions
 
@@ -271,14 +271,17 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
 
     unary_limit = max(max(t.count_unary_depth() for t in train_trees),
                       max(t.count_unary_depth() for t in dev_trees)) + 1
-    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'])
-    dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'])
+    common_words = set(parse_tree.Tree.get_common_words(train_trees, args['transition_shift_labels']))
+    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'], common_words)
+    dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'], common_words)
 
     logger.info("Total unique transitions in train set: %d", len(train_transitions))
     logger.info("Unique transitions in training set: %s", train_transitions)
     for trans in dev_transitions:
         if trans not in train_transitions:
             raise RuntimeError("Found transition {} in the dev set which don't exist in the train set".format(trans))
+    if parse_transitions.Shift() not in train_transitions:
+        raise RuntimeError("Error: all words are labeled 'common words' for the treebank.  No unlabeled Shift transition will be learned")
 
     verify_transitions(train_trees, train_sequences, args['transition_scheme'], unary_limit)
     verify_transitions(dev_trees, dev_sequences, args['transition_scheme'], unary_limit)

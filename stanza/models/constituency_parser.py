@@ -307,6 +307,8 @@ def parse_args(args=None):
 
     parser.add_argument('--transition_scheme', default=TransitionScheme.IN_ORDER, type=lambda x: TransitionScheme[x.upper()],
                         help='Transition scheme to use.  {}'.format(", ".join(x.name for x in TransitionScheme)))
+    parser.add_argument('--transition_shift_labels', default=20, type=int,
+                        help='How many common words to use as labels on the Shift transitions')
 
     # combining dummy and open node embeddings might be a slight improvement
     # for example, after 550 iterations, one experiment had
