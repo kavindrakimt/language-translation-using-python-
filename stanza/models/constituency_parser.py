@@ -307,6 +307,8 @@ def parse_args(args=None):
 
     parser.add_argument('--transition_scheme', default=TransitionScheme.IN_ORDER, type=lambda x: TransitionScheme[x.upper()],
                         help='Transition scheme to use.  {}'.format(", ".join(x.name for x in TransitionScheme)))
+    parser.add_argument('--tag_dropout', default=0.2, type=float,
+                        help='Fraction of tags to replace with <UNK> at training time')
 
     # combining dummy and open node embeddings might be a slight improvement
     # for example, after 550 iterations, one experiment had
@@ -329,7 +331,6 @@ def parse_args(args=None):
 
     parser.add_argument('--rare_word_unknown_frequency', default=0.02, type=float, help='How often to replace a rare word with UNK when training')
     parser.add_argument('--rare_word_threshold', default=0.02, type=float, help='How many words to consider as rare words as a fraction of the dataset')
-    parser.add_argument('--tag_unknown_frequency', default=0.001, type=float, help='How often to replace a tag with UNK when training')
 
     parser.add_argument('--num_lstm_layers', default=2, type=int, help='How many layers to use in the LSTMs')
     parser.add_argument('--num_output_layers', default=3, type=int, help='How many layers to use at the prediction level')
@@ -401,6 +402,9 @@ def parse_args(args=None):
         args['retag_xpos'] = False
     else:
         raise ValueError("Unknown retag method {}".format(xpos))
+
+    if args['mode'] == 'train' and args['tag_dropout'] <= 0.0:
+        raise ValueError("Model will not train correctly with tag_dropout <= 0")
 
     return args
 

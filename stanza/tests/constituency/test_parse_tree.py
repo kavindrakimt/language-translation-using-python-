@@ -350,3 +350,15 @@ def test_pretty_print():
     assert "{:P}".format(trees[1]) == expected
 
     assert text == "{:O} {:O}".format(*trees)
+
+def test_tag_dropout():
+    text = "(ROOT (S (VP (VB Unban)) (NP (NNP Mox) (NNP Opal))))"
+    expected = "(ROOT (S (VP (<UNK> Unban)) (NP (<UNK> Mox) (<UNK> Opal))))"
+    trees = tree_reader.read_trees(text)
+    assert len(trees) == 1
+
+    updated = trees[0].dropout_tags(1.0)
+    assert expected == str(updated)
+
+    updated = trees[0].dropout_tags(0.0)
+    assert text == str(updated)

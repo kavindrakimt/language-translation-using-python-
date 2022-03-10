@@ -6,10 +6,12 @@ from collections import deque, Counter
 from enum import Enum
 from io import StringIO
 import itertools
+import random
 import re
 import warnings
 
 from stanza.models.common.doc import StanzaObject
+from stanza.models.common.vocab import UNK
 
 # useful more for the "is" functionality than the time savings
 CLOSE_PAREN = ')'
@@ -436,6 +438,19 @@ class Tree(StanzaObject):
             raise ValueError("Too many words for the given tree")
         return new_tree
 
+    def dropout_tags(self, dropout_rate):
+        """
+        Replace tags with UNK X% of the time
+        """
+        if self.is_leaf():
+            return Tree(self.label)
+        elif self.is_preterminal():
+            if random.random() < dropout_rate:
+                return Tree(UNK, Tree(self.children[0].label))
+            else:
+                return Tree(self.label, Tree(self.children[0].label))
+        else:
+            return Tree(self.label, [x.dropout_tags(dropout_rate) for x in self.children])
 
     def prune_none(self):
         """

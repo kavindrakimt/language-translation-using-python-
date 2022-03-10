@@ -510,9 +510,12 @@ def train_model_one_batch(epoch, batch_idx, model, batch, transition_tensors, mo
     """
     # now we add the state to the trees in the batch
     # the state is build as a bulk operation
-    initial_states = parse_transitions.initial_state_from_preterminals([x.preterminals for x in batch], model, [x.tree for x in batch])
+    gold_trees = [x.tree.dropout_tags(args['tag_dropout']) for x in batch]
+    preterminals = [list(x.yield_preterminals()) for x in gold_trees]
+    train_sequences = transition_sequence.build_treebank(gold_trees, args['transition_scheme'])
+    initial_states = parse_transitions.initial_state_from_preterminals(preterminals, model, gold_trees)
     batch = [state._replace(gold_sequence=sequence)
-             for (tree, sequence, _), state in zip(batch, initial_states)]
+             for sequence, state in zip(train_sequences, initial_states)]
 
     transitions_correct = Counter()
     transitions_incorrect = Counter()
