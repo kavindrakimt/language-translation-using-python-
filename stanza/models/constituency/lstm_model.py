@@ -460,8 +460,8 @@ class LSTMModel(BaseModel, nn.Module):
     def is_low_decay_parameter(self, name):
         #if name.find("_embedding") >= 0:
         #    return True
-        #if name.startswith("partitioned_transformer_module"):
-        #    return True
+        if name.startswith("partitioned_transformer_module"):
+            return True
         #if name.find(".bias") >= 0:
         #    return True
         if name.find(".norm") >= 0 or name.find(".layer_norm") >= 0:
