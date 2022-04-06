@@ -12,6 +12,7 @@ See the `train` method for the code block which starts from
 
 from collections import Counter
 from collections import namedtuple
+from collections import OrderedDict
 import logging
 import random
 import re
@@ -45,9 +46,9 @@ class Trainer:
 
     Not inheriting from common/trainer.py because there's no concept of change_lr (yet?)
     """
-    def __init__(self, args, model, optimizer=None):
+    def __init__(self, args, models, optimizer=None):
         self.args = args
-        self.model = model
+        self.models = models
         self.optimizer = optimizer
 
     def uses_xpos(self):
@@ -57,10 +58,14 @@ class Trainer:
         """
         Save the model (and by default the optimizer) to the given path
         """
-        params = self.model.get_params()
+        # TODO: one liner for this?
+        param_map = OrderedDict()
+        for model_name, model in self.models.items():
+            param_map[model_name] = model.get_params()
+
         checkpoint = {
             'args': self.args,
-            'params': params,
+            'param_map': param_map,
             'model_type': 'LSTM',
         }
         if save_optimizer and self.optimizer is not None:
@@ -88,13 +93,20 @@ class Trainer:
 
         saved_args = dict(checkpoint['args'])
         saved_args.update(args)
-        params = checkpoint['params']
+        bert_model, bert_tokenizer = load_bert(saved_args.get('bert_model', None), foundation_cache)
+        forward_charlm = load_charlm(saved_args["charlm_forward_file"], foundation_cache)
+        backward_charlm = load_charlm(saved_args["charlm_backward_file"], foundation_cache)
+
+        if 'param_map' not in checkpoint:
+            param_map = {'default': checkpoint.get('params', checkpoint)}
+        else:
+            param_map = checkpoint['param_map']
 
         model_type = checkpoint['model_type']
-        if model_type == 'LSTM':
-            bert_model, bert_tokenizer = load_bert(saved_args.get('bert_model', None), foundation_cache)
-            forward_charlm = load_charlm(saved_args["charlm_forward_file"], foundation_cache)
-            backward_charlm = load_charlm(saved_args["charlm_backward_file"], foundation_cache)
+        if model_type != 'LSTM':
+            raise ValueError("Unknown model type {}".format(model_type))
+        models = OrderedDict()
+        for model_name, params in param_map.items():
             model = LSTMModel(pretrain=pt,
                               forward_charlm=forward_charlm,
                               backward_charlm=backward_charlm,
@@ -109,15 +121,13 @@ class Trainer:
                               constituent_opens=params['constituent_opens'],
                               unary_limit=params['unary_limit'],
                               args=saved_args)
-        else:
-            raise ValueError("Unknown model type {}".format(model_type))
-        model.load_state_dict(params['model'], strict=False)
-
-        if saved_args['cuda']:
-            model.cuda()
+            model.load_state_dict(params['model'], strict=False)
+            if use_gpu:
+                model.cuda()
+            models[model_name] = model
 
         if load_optimizer:
-            optimizer = build_optimizer(saved_args, model)
+            optimizer = build_optimizer(saved_args, models)
 
             if checkpoint.get('optimizer_state_dict', None) is not None:
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -127,11 +137,14 @@ class Trainer:
             optimizer = None
 
         logger.debug("-- MODEL CONFIG --")
-        for k in model.args.keys():
-            logger.debug("  --%s: %s", k, model.args[k])
+        for k in saved_args.keys():
+            logger.debug("  --%s: %s", k, saved_args[k])
 
-        return Trainer(args=saved_args, model=model, optimizer=optimizer)
+        return Trainer(args=saved_args, models=models, optimizer=optimizer)
 
+    def log_norms():
+        for name, model in self.models.items():
+            model.log_norms("NORMS for {}".format(name))
 
 def load_pretrain(args):
     """
@@ -191,18 +204,16 @@ def evaluate(args, model_file, retag_pipeline):
         }
         trainer = Trainer.load(model_file, pt, args=load_args)
 
-        treebank = tree_reader.read_treebank(args['eval_file'])
-        logger.info("Read %d trees for evaluation", len(treebank))
-
-        if retag_pipeline is not None:
-            logger.info("Retagging trees using the %s tags from the %s package...", args['retag_method'], args['retag_package'])
-            treebank = retag_trees(treebank, retag_pipeline, args['retag_xpos'])
-            logger.info("Retagging finished")
+        treebank = read_treebanks(args['eval_file'], "test", retag_pipeline, args, dedup=False)
 
         if args['log_norms']:
-            trainer.model.log_norms()
-        f1 = run_dev_set(trainer.model, treebank, args, evaluator)
-        logger.info("F1 score on %s: %f", args['eval_file'], f1)
+            trainer.log_norms()
+        for name, trees in treebank.items():
+            if name not in trainer.models:
+                logger.error("No model for %s available", name)
+                continue
+            f1 = run_dev_set(trainer.models.get(name), trees, args, evaluator)
+            logger.info("F1 score on %s: %f", name, f1)
 
 def get_open_nodes(trees, args):
     """
@@ -248,72 +259,86 @@ def convert_trees_to_sequences(trees, tree_type, transition_scheme):
     transitions = transition_sequence.all_transitions(sequences)
     return sequences, transitions
 
-def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer):
+def build_trainer(args, train_treebanks, dev_treebanks, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer):
     """
     Builds a Trainer (with model) and the train_sequences and transitions for the given trees.
     """
-    train_constituents = parse_tree.Tree.get_unique_constituent_labels(train_trees)
-    dev_constituents = parse_tree.Tree.get_unique_constituent_labels(dev_trees)
-    logger.info("Unique constituents in training set: %s", train_constituents)
-    for con in dev_constituents:
-        if con not in train_constituents:
-            raise RuntimeError("Found label {} in the dev set which don't exist in the train set".format(con))
-    constituent_counts = parse_tree.Tree.get_constituent_counts(train_trees)
-    logger.info("Constituent node counts: %s", constituent_counts)
-
-    tags = parse_tree.Tree.get_unique_tags(train_trees)
-    logger.info("Unique tags in training set: %s", tags)
-    # no need to fail for missing tags between train/dev set
-    # the model has an unknown tag embedding
-    for tag in parse_tree.Tree.get_unique_tags(dev_trees):
-        if tag not in tags:
-            logger.info("Found tag in dev set which does not exist in train set: %s  Continuing...", tag)
-
-    unary_limit = max(max(t.count_unary_depth() for t in train_trees),
-                      max(t.count_unary_depth() for t in dev_trees)) + 1
-    train_sequences, train_transitions = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'])
-    dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'])
-
-    logger.info("Total unique transitions in train set: %d", len(train_transitions))
-    logger.info("Unique transitions in training set: %s", train_transitions)
-    for trans in dev_transitions:
-        if trans not in train_transitions:
-            raise RuntimeError("Found transition {} in the dev set which don't exist in the train set".format(trans))
-
-    verify_transitions(train_trees, train_sequences, args['transition_scheme'], unary_limit)
-    verify_transitions(dev_trees, dev_sequences, args['transition_scheme'], unary_limit)
-
-    root_labels = parse_tree.Tree.get_root_labels(train_trees)
-    for root_state in parse_tree.Tree.get_root_labels(dev_trees):
-        if root_state not in root_labels:
-            raise RuntimeError("Found root state {} in the dev set which is not a ROOT state in the train set".format(root_state))
-
-    # we don't check against the words in the dev set as it is
-    # expected there will be some UNK words
-    words = parse_tree.Tree.get_unique_words(train_trees)
-    rare_words = parse_tree.Tree.get_rare_words(train_trees, args['rare_word_threshold'])
-    # also, it's not actually an error if there is a pattern of
-    # compound unary or compound open nodes which doesn't exist in the
-    # train set.  it just means we probably won't ever get that right
-    open_nodes = get_open_nodes(train_trees, args)
-
-    # at this point we have:
-    # pretrain
-    # train_trees, dev_trees
-    # lists of transitions, internal nodes, and root states the parser needs to be aware of
-
+    trainer = None
     if args['finetune'] or (args['maybe_finetune'] and os.path.exists(model_load_file)):
         logger.info("Loading model to continue training from %s", model_load_file)
         trainer = Trainer.load(model_load_file, pt, args, load_optimizer=True)
-    else:
-        model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
-        if args['cuda']:
-            model.cuda()
-        logger.info("Number of words in the training set found in the embedding: {} out of {}".format(model.num_words_known(words), len(words)))
 
-        optimizer = build_optimizer(args, model)
+    all_train_sequences = OrderedDict()
+    all_train_transitions = OrderedDict()
+    models = OrderedDict()
+    for schema, train_trees in train_treebanks.items():
+        dev_trees = dev_treebanks.get(schema, [])
 
-        trainer = Trainer(args, model, optimizer)
+        train_constituents = parse_tree.Tree.get_unique_constituent_labels(train_trees)
+        dev_constituents = parse_tree.Tree.get_unique_constituent_labels(dev_trees)
+        logger.info("Unique constituents in training set: %s", train_constituents)
+        for con in dev_constituents:
+            if con not in train_constituents:
+                raise RuntimeError("Found label {} in the dev set which don't exist in the train set".format(con))
+        constituent_counts = parse_tree.Tree.get_constituent_counts(train_trees)
+        logger.info("Constituent node counts: %s", constituent_counts)
+
+        tags = parse_tree.Tree.get_unique_tags(train_trees)
+        logger.info("Unique tags in training set: %s", tags)
+        # no need to fail for missing tags between train/dev set
+        # the model has an unknown tag embedding
+        for tag in parse_tree.Tree.get_unique_tags(dev_trees):
+            if tag not in tags:
+                logger.info("Found tag in dev set which does not exist in train set: %s  Continuing...", tag)
+
+        unary_limit = max(max(t.count_unary_depth() for t in train_trees),
+                          max(t.count_unary_depth() for t in dev_trees)) + 1
+        train_sequences, train_transitions = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'])
+        dev_sequences, dev_transitions = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'])
+
+        logger.info("Total unique transitions in train set: %d", len(train_transitions))
+        logger.info("Unique transitions in training set: %s", train_transitions)
+        for trans in dev_transitions:
+            if trans not in train_transitions:
+                raise RuntimeError("Found transition {} in the dev set which don't exist in the train set".format(trans))
+
+        verify_transitions(train_trees, train_sequences, args['transition_scheme'], unary_limit)
+        verify_transitions(dev_trees, dev_sequences, args['transition_scheme'], unary_limit)
+
+        root_labels = parse_tree.Tree.get_root_labels(train_trees)
+        for root_state in parse_tree.Tree.get_root_labels(dev_trees):
+            if root_state not in root_labels:
+                raise RuntimeError("Found root state {} in the dev set which is not a ROOT state in the train set".format(root_state))
+
+        # we don't check against the words in the dev set as it is
+        # expected there will be some UNK words
+        words = parse_tree.Tree.get_unique_words(train_trees)
+        rare_words = parse_tree.Tree.get_rare_words(train_trees, args['rare_word_threshold'])
+        # also, it's not actually an error if there is a pattern of
+        # compound unary or compound open nodes which doesn't exist in the
+        # train set.  it just means we probably won't ever get that right
+        open_nodes = get_open_nodes(train_trees, args)
+
+        # at this point we have:
+        # pretrain
+        # train_trees, dev_trees
+        # lists of transitions, internal nodes, and root states the parser needs to be aware of
+
+        all_train_sequences[schema] = train_sequences
+        all_train_transitions[schema] = train_transitions
+
+        if trainer is None:
+            model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
+            if args['cuda']:
+                model.cuda()
+            logger.info("Number of words in the {} training set found in the embedding: {} out of {}".format(schema, model.num_words_known(words), len(words)))
+            models[schema] = model
+
+    if trainer is None:
+        optimizer = build_optimizer(args, models)
+
+        models = OrderedDict([("default", model)])
+        trainer = Trainer(args, models, optimizer)
 
     return trainer, train_sequences, train_transitions
 
@@ -335,7 +360,7 @@ def remove_duplicates(trees, dataset):
 
 def remove_no_tags(trees):
     """
-    TODO: remove these trees in the conversion instead of here
+    TODO: remove these trees in the treebank original data -> PTB conversion instead of here
     """
     new_trees = [x for x in trees if
                  len(x.children) > 1 or
@@ -344,6 +369,70 @@ def remove_no_tags(trees):
     if len(trees) - len(new_trees) > 0:
         logger.info("Eliminated %d trees with missing structure", (len(trees) - len(new_trees)))
     return new_trees
+
+def process_treebank_descriptions(treebank_descriptions):
+    """
+    Returns a map of schema name to list of filenames
+
+    For now, the only information kept about the treebank is the filename and annotation scheme
+    """
+    treebanks = OrderedDict()
+    first_package = None
+    for td in treebank_descriptions.split(";"):
+        pieces = td.split(",")
+        filename = None
+        package = None
+        for piece in pieces:
+            kv = piece.split("=", maxsplit=1)
+            if len(kv) == 1:
+                key = "filename"
+                value = piece
+            else:
+                key, value = kv
+            if key == 'filename':
+                filename = value
+            elif key == 'package':
+                package = value
+            else:
+                raise ValueError("Unknown key {} in {}".format(key, treebank_descriptions))
+        if package is None:
+            if first_package is None:
+                first_package = "default"
+            package = first_package
+        if first_package is None:
+            first_package = package
+        if filename is None:
+            raise ValueError("Missing filename in {}".format(treebank_descriptions))
+        if package not in treebanks:
+            treebanks[package] = []
+        treebanks[package].append(filename)
+    return treebanks
+
+
+def read_treebanks(treebank_descriptions, data_split, retag_pipeline, args, dedup=True):
+    """
+    data_split: used for logging.  train, dev, test
+
+    returns an ordered dict from schema (eg Turin or VIT in the case of Italian) to list of trees
+    """
+    treebank_descriptions = process_treebank_descriptions(treebank_descriptions)
+    treebanks = OrderedDict()
+    for schema, filenames in treebank_descriptions.items():
+        treebank = []
+        for filename in filenames:
+            trees = tree_reader.read_treebank(filename)
+            logger.info("Read %d trees from %s for the %s %s set", len(trees), filename, schema, data_split)
+            treebank.extend(trees)
+        if dedup:
+            treebank = remove_duplicates(treebank, data_split)
+        treebank = remove_no_tags(treebank)
+
+        if retag_pipeline is not None:
+            logger.info("Retagging %s %s trees using the %s tags from the %s package...", schema, data_split, args['retag_method'], args['retag_package'])
+            treebank = retag_trees(treebank, retag_pipeline, args['retag_xpos'])
+
+        treebanks[schema] = treebank
+    return treebanks
 
 def train(args, model_save_file, model_load_file, model_save_latest_file, retag_pipeline):
     """
@@ -371,29 +460,17 @@ def train(args, model_save_file, model_load_file, model_save_latest_file, retag_
     with EvaluateParser(kbest=kbest) as evaluator:
         utils.ensure_dir(args['save_dir'])
 
-        train_trees = tree_reader.read_treebank(args['train_file'])
-        logger.info("Read %d trees for the training set", len(train_trees))
-        train_trees = remove_duplicates(train_trees, "train")
-        train_trees = remove_no_tags(train_trees)
-
-        dev_trees = tree_reader.read_treebank(args['eval_file'])
-        logger.info("Read %d trees for the dev set", len(dev_trees))
-        dev_trees = remove_duplicates(dev_trees, "dev")
-
-        if retag_pipeline is not None:
-            logger.info("Retagging trees using the %s tags from the %s package...", args['retag_method'], args['retag_package'])
-            train_trees = retag_trees(train_trees, retag_pipeline, args['retag_xpos'])
-            dev_trees = retag_trees(dev_trees, retag_pipeline, args['retag_xpos'])
-            logger.info("Retagging finished")
+        train_treebanks = read_treebanks(args['train_file'], "train", retag_pipeline, args)
+        dev_treebanks = read_treebanks(args['eval_file'], "dev", retag_pipeline, args)
 
         pt = load_pretrain(args)
         forward_charlm = load_charlm(args['charlm_forward_file'])
         backward_charlm = load_charlm(args['charlm_backward_file'])
         bert_model, bert_tokenizer = load_bert(args['bert_model'])
 
-        trainer, train_sequences, train_transitions = build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer)
+        trainer, train_sequences, train_transitions = build_trainer(args, train_treebanks, dev_treebanks, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer)
 
-        iterate_training(trainer, train_trees, train_sequences, train_transitions, dev_trees, args, model_save_file, model_save_latest_file, evaluator)
+        iterate_training(trainer, train_treebankss, train_sequences, train_transitions, dev_treebankss, args, model_save_file, model_save_latest_file, evaluator)
 
     if args['wandb']:
         wandb.finish()
@@ -410,7 +487,7 @@ class EpochStats(namedtuple("EpochStats", ['epoch_loss', 'transitions_correct', 
         return EpochStats(epoch_loss, transitions_correct, transitions_incorrect, repairs_used, fake_transitions_used)
 
 
-def iterate_training(trainer, train_trees, train_sequences, transitions, dev_trees, args, model_filename, model_latest_filename, evaluator):
+def iterate_training(trainer, train_treebanks, train_sequences, transitions, dev_treebankss, args, model_filename, model_latest_filename, evaluator):
     """
     Given an initialized model, a processed dataset, and a secondary dev dataset, train the model
 
@@ -457,7 +534,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
         model.train()
         logger.info("Starting epoch %d", epoch)
         if args['log_norms']:
-            model.log_norms()
+            trainer.log_norms()
         epoch_data = leftover_training_data
         while len(epoch_data) < args['epoch_size']:
             random.shuffle(train_data)
