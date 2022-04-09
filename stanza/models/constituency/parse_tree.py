@@ -308,6 +308,23 @@ class Tree(StanzaObject):
             tree.visit_preorder(preterminal = lambda x: tags.add(x.label))
         return sorted(tags)
 
+
+    @staticmethod
+    def get_common_tags(trees, num_tags=5):
+        """
+        Walks over all of the trees and gets the most frequently occurring tags from the trees
+        """
+        if num_tags == 0:
+            return set()
+
+        if isinstance(trees, Tree):
+            trees = [trees]
+
+        tags = Counter()
+        for tree in trees:
+            tree.visit_preorder(preterminal = lambda x: tags.update([x.label]))
+        return sorted(x[0] for x in tags.most_common()[:num_tags])
+
     @staticmethod
     def get_unique_words(trees):
         """

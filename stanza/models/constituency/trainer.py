@@ -103,6 +103,7 @@ class Trainer:
                               transitions=params['transitions'],
                               constituents=params['constituents'],
                               tags=params['tags'],
+                              common_tags=params['common_tags'],
                               words=params['words'],
                               rare_words=params['rare_words'],
                               root_labels=params['root_labels'],
@@ -268,16 +269,20 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
         if tag not in tags:
             logger.info("Found tag in dev set which does not exist in train set: %s  Continuing...", tag)
 
+    num_common_tags = args['num_tag_shifts']
+    if num_common_tags < 0:
+        num_common_tags = len(tags)
+    common_tags = parse_tree.Tree.get_common_tags(train_trees, num_common_tags)
     unary_limit = max(max(t.count_unary_depth() for t in train_trees),
                       max(t.count_unary_depth() for t in dev_trees)) + 1
-    train_sequences = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'], tags)
+    train_sequences = convert_trees_to_sequences(train_trees, "training", args['transition_scheme'], common_tags)
     # the training transitions will all be labeled with the tags
     # currently we are just checking correctness
     # we add an unlabeled Shift so that the model can represent previously unseen tags
     # at train time we will redo some tags as <UNK> to train the unlabeled Shift
     # (this also will essentially be a form of dropout)
     train_transitions = transition_sequence.all_transitions(train_sequences + [[parse_transitions.Shift()]])
-    dev_sequences = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'], tags)
+    dev_sequences = convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'], common_tags)
     dev_transitions = transition_sequence.all_transitions(dev_sequences)
 
     logger.info("Total unique transitions in train set: %d", len(train_transitions))
@@ -312,7 +317,7 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
         logger.info("Loading model to continue training from %s", model_load_file)
         trainer = Trainer.load(model_load_file, pt, args, load_optimizer=True)
     else:
-        model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
+        model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, common_tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
         if args['cuda']:
             model.cuda()
         logger.info("Number of words in the training set found in the embedding: {} out of {}".format(model.num_words_known(words), len(words)))
@@ -518,7 +523,7 @@ def train_model_one_batch(epoch, batch_idx, model, batch, transition_tensors, mo
     # the state is build as a bulk operation
     gold_trees = [x.tree.dropout_tags(args['tag_dropout']) for x in batch]
     preterminals = [list(x.yield_preterminals()) for x in gold_trees]
-    train_sequences = transition_sequence.build_treebank(gold_trees, args['transition_scheme'], model.tags)
+    train_sequences = transition_sequence.build_treebank(gold_trees, args['transition_scheme'], model.common_tags)
     initial_states = parse_transitions.initial_state_from_preterminals(preterminals, model, gold_trees)
     batch = [state._replace(gold_sequence=sequence)
              for sequence, state in zip(train_sequences, initial_states)]

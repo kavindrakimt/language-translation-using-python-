@@ -144,7 +144,7 @@ class ConstituencyComposition(Enum):
     ATTN                  = 6
 
 class LSTMModel(BaseModel, nn.Module):
-    def __init__(self, pretrain, forward_charlm, backward_charlm, bert_model, bert_tokenizer, transitions, constituents, tags, words, rare_words, root_labels, constituent_opens, unary_limit, args):
+    def __init__(self, pretrain, forward_charlm, backward_charlm, bert_model, bert_tokenizer, transitions, constituents, tags, common_tags, words, rare_words, root_labels, constituent_opens, unary_limit, args):
         """
         pretrain: a Pretrain object
         transitions: a list of all possible transitions which will be
@@ -237,6 +237,7 @@ class LSTMModel(BaseModel, nn.Module):
 
         self.rare_words = set(rare_words)
 
+        self.common_tags = set(common_tags)
         self.tags = sorted(list(tags))
         if self.tag_embedding_dim > 0:
             self.tag_map = { t: i+2 for i, t in enumerate(self.tags) }
@@ -829,6 +830,7 @@ class LSTMModel(BaseModel, nn.Module):
             'transitions': self.transitions,
             'constituents': self.constituents,
             'tags': self.tags,
+            'common_tags': self.common_tags,
             'words': self.delta_words,
             'rare_words': self.rare_words,
             'root_labels': self.root_labels,
