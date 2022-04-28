@@ -81,6 +81,7 @@ def parse_args(args=None):
     parser.add_argument('--log_step', type=int, default=20, help='Print log every k steps.')
     parser.add_argument('--save_dir', type=str, default='saved_models/pos', help='Root dir for saving models.')
     parser.add_argument('--save_name', type=str, default=None, help="File name to save the model")
+    parser.add_argument('--load_name', type=str, default=None, help="File name to load the model")
 
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--cuda', type=bool, default=torch.cuda.is_available())
@@ -114,6 +115,9 @@ def main(args=None):
         evaluate(args)
 
 def model_file_name(args):
+    if args["load_name"]:
+        return args["load_name"]
+
     if args['save_name'] is not None:
         save_name = args['save_name']
     else:
@@ -212,10 +216,11 @@ def train(args):
                 dev_preds = utils.unsort(dev_preds, dev_batch.data_orig_idx)
                 dev_batch.doc.set([UPOS, XPOS, FEATS], [y for x in dev_preds for y in x])
                 CoNLL.write_doc2conll(dev_batch.doc, system_pred_file)
-                _, _, dev_score = scorer.score(system_pred_file, gold_file)
+                # _, _, dev_score = scorer.score(system_pred_file, gold_file)
+                _, _, _, dev_score = scorer.score(system_pred_file, gold_file)
 
                 train_loss = train_loss / args['eval_interval'] # avg loss per batch
-                logger.info("step {}: train_loss = {:.6f}, dev_score = {:.4f}".format(global_step, train_loss, dev_score))
+                # logger.info("step {}: train_loss = {:.6f}, dev_score = {:.4f}".format(global_step, train_loss, dev_score))
 
                 if args['wandb']:
                     wandb.log({'train_loss': train_loss, 'dev_score': dev_score})
@@ -270,7 +275,7 @@ def evaluate(args):
     model_file = model_file_name(args)
 
     pretrain = load_pretrain(args)
-
+    # model_file = "../../stanza_resources/en/pos/combined.pt"
     # load model
     logger.info("Loading model from: {}".format(model_file))
     use_cuda = args['cuda'] and not args['cpu']
@@ -301,10 +306,9 @@ def evaluate(args):
     CoNLL.write_doc2conll(batch.doc, system_pred_file)
 
     if gold_file is not None:
-        _, _, score = scorer.score(system_pred_file, gold_file)
+        _, _, _, score = scorer.score(system_pred_file, gold_file)
 
-        logger.info("Tagger score:")
-        logger.info("{} {:.2f}".format(args['shorthand'], score*100))
+        logger.info("UPOS accuracy score {} {:.2f}".format(args['shorthand'], score))
 
 if __name__ == '__main__':
     main()
