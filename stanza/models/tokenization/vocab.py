@@ -15,8 +15,8 @@ class Vocab(BaseVocab):
         paras = self.data
         counter = Counter()
         for para in paras:
-            for unit in para:
-                normalized = self.normalize_unit(unit[0])
+            for unit in para[0]:
+                normalized = self.normalize_unit(unit)
                 counter[normalized] += 1
 
         self._id2unit = [PAD, UNK] + list(sorted(list(counter.keys()), key=lambda k: counter[k], reverse=True))

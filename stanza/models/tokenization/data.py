@@ -11,18 +11,31 @@ logger = logging.getLogger('stanza')
 
 def filter_consecutive_whitespaces(para):
     filtered = []
-    for i, (char, label) in enumerate(para):
-        if i > 0:
-            if char == ' ' and para[i-1][0] == ' ':
-                continue
+    indices = []
+    for i, char in enumerate(para[0]):
+        if not (i > 0 and char == ' ' and filtered[-1] == ' '):
+            indices.append(i)
+            filtered.append(char)
+    if len(indices) == len(para[0]):
+        return para
 
-        filtered.append((char, label))
-
-    return filtered
+    return filtered, para[1][indices]
 
 NEWLINE_WHITESPACE_RE = re.compile(r'\n\s*\n')
 NUMERIC_RE = re.compile(r'^([\d]+[,\.]*)+$')
 WHITESPACE_RE = re.compile(r'\s')
+
+def sub_whitespace(pt):
+    return [WHITESPACE_RE.sub(' ', c) for c in pt]
+
+def skip_newlines(text, labels):
+    # TODO: check speed on this operation
+    filtered = [x for x in filter(lambda x: x[1] != '\n', enumerate(text))]
+    if len(filtered) == len(text):
+        return text, labels
+    text = [x[1] for x in filtered]
+    labels = labels[[x[0] for x in filtered]]
+    return text, labels
 
 class DataLoader:
     def __init__(self, args, input_files={'txt': None, 'label': None}, input_text=None, vocab=None, evaluation=False, dictionary=None):
@@ -51,14 +64,21 @@ class DataLoader:
                 labels = ''.join(f.readlines()).rstrip()
                 labels = NEWLINE_WHITESPACE_RE.split(labels)
                 labels = [pt.rstrip() for pt in labels]
-                labels = [map(int, pt) for pt in labels if pt]
+                labels = [np.array([int(x) for x in pt]) for pt in labels if pt]
         else:
-            labels = [[0 for _ in pt] for pt in text_chunks]
+            labels = [np.zeros(len(pt), dtype=np.int32) for pt in text_chunks]
 
         skip_newline = args.get('skip_newline', False)
-        self.data = [[(WHITESPACE_RE.sub(' ', char), label) # substitute special whitespaces
-                      for char, label in zip(pt, pc) if not (skip_newline and char == '\n')] # check if newline needs to be eaten
-                     for pt, pc in zip(text_chunks, labels)]
+        if skip_newline:
+            data = [skip_newlines(pt, pc) for pt, pc in zip(text_chunks, labels)]
+        else:
+            data = [(pt, pc) for pt, pc in zip(text_chunks, labels)]
+
+        self.data = [(sub_whitespace(pt), pc) for pt, pc in data]
+
+        #self.data = [[(WHITESPACE_RE.sub(' ', char), label) # substitute special whitespaces
+        #              for char, label in zip(pt, pc) if not (skip_newline and char == '\n')] # check if newline needs to be eaten
+        #             for pt, pc in zip(text_chunks, labels)]
 
         # remove consecutive whitespaces
         self.data = [filter_consecutive_whitespaces(x) for x in self.data]
@@ -79,9 +99,8 @@ class DataLoader:
         # 1 when training and 0 any other time, so no effort is put
         # into caching the result
         for sentence in self.data:
-            for word in sentence:
-                if word[1] > 2:
-                    return True
+            if any(sentence[1] > 2):
+                return True
         return False
 
     def init_vocab(self):
@@ -102,25 +121,25 @@ class DataLoader:
 
         Used at eval time to compare to the results, for example
         """
-        return [np.array(list(x[1] for x in sent)) for sent in self.data]
+        return [sent[1] for sent in self.data]
 
-    def extract_dict_feat(self, para, idx):
+    def extract_dict_feat(self, text, idx):
         """
         This function is to extract dictionary features for each character
         """
-        length = len(para)
+        length = len(text)
 
         dict_forward_feats = [0 for i in range(self.args['num_dict_feat'])]
         dict_backward_feats = [0 for i in range(self.args['num_dict_feat'])]
-        forward_word = para[idx][0]
-        backward_word = para[idx][0]
+        forward_word = text[idx]
+        backward_word = text[idx]
         prefix = True
         suffix = True
         for window in range(1,self.args['num_dict_feat']+1):
             # concatenate each character and check if words found in dict not, stop if prefix not found
             #check if idx+t is out of bound and if the prefix is already not found
             if (idx + window) <= length-1 and prefix:
-                forward_word += para[idx+window][0].lower()
+                forward_word += text[idx+window].lower()
                 #check in json file if the word is present as prefix or word or None.
                 feat = 1 if forward_word in self.dictionary["words"] else 0
                 #if the return value is not 2 or 3 then the checking word is not a valid word in dict.
@@ -130,7 +149,7 @@ class DataLoader:
                     prefix = False
             #backward check: similar to forward
             if (idx - window) >= 0 and suffix:
-                backward_word = para[idx-window][0].lower() + backward_word
+                backward_word = text[idx-window].lower() + backward_word
                 feat = 1 if backward_word in self.dictionary["words"] else 0
                 dict_backward_feats[window-1] = feat
                 if backward_word not in self.dictionary["suffixes"]:
@@ -170,11 +189,12 @@ class DataLoader:
         use_start_of_para = 'start_of_para' in self.args['feat_funcs']
         current = []
         use_dictionary = self.args['use_dictionary']
-        for i, (unit, label) in enumerate(para):
+        text, labels = para
+        for i, (unit, label) in enumerate(zip(text, labels)):
             feats = composite_func(unit)
             # position-dependent features
             if use_end_of_para:
-                f = 1 if i == len(para)-1 else 0
+                f = 1 if i == len(text)-1 else 0
                 feats.append(f)
             if use_start_of_para:
                 f = 1 if i == 0 else 0
@@ -182,7 +202,7 @@ class DataLoader:
 
             #if dictionary feature is selected
             if use_dictionary:
-                dict_feats = self.extract_dict_feat(para, i)
+                dict_feats = self.extract_dict_feat(text, i)
                 feats = feats + dict_feats
 
             current += [(unit, label, feats)]

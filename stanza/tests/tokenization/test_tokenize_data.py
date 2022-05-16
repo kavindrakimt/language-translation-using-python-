@@ -74,10 +74,23 @@ def zhtok():
     tokenizer = pipeline.processors['tokenize']
     return tokenizer
 
-EXPECTED_TWO_NL_RAW = [[('T', 0), ('h', 0), ('i', 0), ('s', 0), (' ', 0), ('i', 0), ('s', 0), (' ', 0), ('a', 0), (' ', 0), ('t', 0), ('e', 0), ('s', 0), ('t', 0)], [('f', 0), ('o', 0), ('o', 0)]]
+EXPECTED_TWO_NL_RAW = [(['T', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't'],
+                        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32)),
+                       (['f', 'o', 'o'],
+                        np.array([0, 0, 0], dtype=np.int32))]
+
 # in this test, the newline after test becomes a space labeled 0
-EXPECTED_ONE_NL_RAW = [[('T', 0), ('h', 0), ('i', 0), ('s', 0), (' ', 0), ('i', 0), ('s', 0), (' ', 0), ('a', 0), (' ', 0), ('t', 0), ('e', 0), ('s', 0), ('t', 0), (' ', 0), ('f', 0), ('o', 0), ('o', 0)]]
-EXPECTED_SKIP_NL_RAW = [[('T', 0), ('h', 0), ('i', 0), ('s', 0), (' ', 0), ('i', 0), ('s', 0), (' ', 0), ('a', 0), (' ', 0), ('t', 0), ('e', 0), ('s', 0), ('t', 0), ('f', 0), ('o', 0), ('o', 0)]]
+EXPECTED_ONE_NL_RAW = [(['T', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't', ' ', 'f', 'o', 'o'],
+                        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32))]
+
+EXPECTED_SKIP_NL_RAW = [(['T', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't', 'f', 'o', 'o'],
+                         np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32))]
+
+def check_data_equal(data, expected_data):
+    assert len(data) == len(expected_data)
+    for batch, expected_batch in zip(data, expected_data):
+        assert batch[0] == expected_batch[0]  # chars
+        assert np.array_equiv(batch[1], expected_batch[1])
 
 def test_convert_units_raw_text(tokenizer):
     """
@@ -85,27 +98,32 @@ def test_convert_units_raw_text(tokenizer):
     """
     raw_text = "This is a      test\n\nfoo"
     batches = DataLoader(tokenizer.config, input_text=raw_text, vocab=tokenizer.vocab, evaluation=True, dictionary=tokenizer.trainer.dictionary)
-    assert batches.data == EXPECTED_TWO_NL_RAW
+    check_data_equal(batches.data, EXPECTED_TWO_NL_RAW)
 
     raw_text = "This is a      test\nfoo"
     batches = DataLoader(tokenizer.config, input_text=raw_text, vocab=tokenizer.vocab, evaluation=True, dictionary=tokenizer.trainer.dictionary)
-    assert batches.data == EXPECTED_ONE_NL_RAW
+    check_data_equal(batches.data, EXPECTED_ONE_NL_RAW)
 
     skip_newline_config = dict(tokenizer.config)
     skip_newline_config['skip_newline'] = True
     batches = DataLoader(skip_newline_config, input_text=raw_text, vocab=tokenizer.vocab, evaluation=True, dictionary=tokenizer.trainer.dictionary)
-    assert batches.data == EXPECTED_SKIP_NL_RAW
+    check_data_equal(batches.data, EXPECTED_SKIP_NL_RAW)
 
 
-EXPECTED_TWO_NL_FILE = [[('T', 0), ('h', 0), ('i', 0), ('s', 0), (' ', 0), ('i', 0), ('s', 0), (' ', 0), ('a', 0), (' ', 0), ('t', 0), ('e', 0), ('s', 0), ('t', 0), ('.', 1)], [('f', 0), ('o', 0), ('o', 0)]]
+EXPECTED_TWO_NL_FILE = [(['T', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't', '.'],
+                         np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], dtype=np.int32)),
+                        (['f', 'o', 'o'],
+                         np.array([0, 0, 0], dtype=np.int32))]
 EXPECTED_TWO_NL_FILE_LABELS = [np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], dtype=np.int32),
                                np.array([0, 0, 0], dtype=np.int32)]
 
 # in this test, the newline after test becomes a space labeled 0
-EXPECTED_ONE_NL_FILE = [[('T', 0), ('h', 0), ('i', 0), ('s', 0), (' ', 0), ('i', 0), ('s', 0), (' ', 0), ('a', 0), (' ', 0), ('t', 0), ('e', 0), ('s', 0), ('t', 0), ('.', 1), (' ', 0), ('f', 0), ('o', 0), ('o', 0)]]
+EXPECTED_ONE_NL_FILE = [(['T', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't', '.', ' ', 'f', 'o', 'o'],
+                         np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], dtype=np.int32))]
 EXPECTED_ONE_NL_FILE_LABELS = [np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], dtype=np.int32)]
 
-EXPECTED_SKIP_NL_FILE = [[('T', 0), ('h', 0), ('i', 0), ('s', 0), (' ', 0), ('i', 0), ('s', 0), (' ', 0), ('a', 0), (' ', 0), ('t', 0), ('e', 0), ('s', 0), ('t', 0), ('.', 1), ('f', 0), ('o', 0), ('o', 0)]]
+EXPECTED_SKIP_NL_FILE = [(['T', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't', '.', 'f', 'o', 'o'],
+                          np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], dtype=np.int32))]
 EXPECTED_SKIP_NL_FILE_LABELS = [np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], dtype=np.int32)]
 
 def check_labels(labels, expected_labels):
@@ -122,18 +140,16 @@ def test_convert_units_file(tokenizer):
         labels   = "00000000000000000001\n\n000\n\n"
         raw_text = "This is a      test.\n\nfoo\n\n"
         txt_file, label_file = write_tokenizer_input(test_dir, raw_text, labels)
-
         batches = DataLoader(tokenizer.config, input_files={'txt': txt_file, 'label': label_file}, vocab=tokenizer.vocab, evaluation=True, dictionary=tokenizer.trainer.dictionary)
-        assert batches.data == EXPECTED_TWO_NL_FILE
+        check_data_equal(batches.data, EXPECTED_TWO_NL_FILE)
         check_labels(batches.labels(), EXPECTED_TWO_NL_FILE_LABELS)
 
         # one nl test case, read from file
         labels   = "000000000000000000010000\n\n"
         raw_text = "This is a      test.\nfoo\n\n"
         txt_file, label_file = write_tokenizer_input(test_dir, raw_text, labels)
-
         batches = DataLoader(tokenizer.config, input_files={'txt': txt_file, 'label': label_file}, vocab=tokenizer.vocab, evaluation=True, dictionary=tokenizer.trainer.dictionary)
-        assert batches.data == EXPECTED_ONE_NL_FILE
+        check_data_equal(batches.data, EXPECTED_ONE_NL_FILE)
         check_labels(batches.labels(), EXPECTED_ONE_NL_FILE_LABELS)
 
         skip_newline_config = dict(tokenizer.config)
@@ -141,11 +157,9 @@ def test_convert_units_file(tokenizer):
         labels   = "000000000000000000010000\n\n"
         raw_text = "This is a      test.\nfoo\n\n"
         txt_file, label_file = write_tokenizer_input(test_dir, raw_text, labels)
-
         batches = DataLoader(skip_newline_config, input_files={'txt': txt_file, 'label': label_file}, vocab=tokenizer.vocab, evaluation=True, dictionary=tokenizer.trainer.dictionary)
-        assert batches.data == EXPECTED_SKIP_NL_FILE
+        check_data_equal(batches.data, EXPECTED_SKIP_NL_FILE)
         check_labels(batches.labels(), EXPECTED_SKIP_NL_FILE_LABELS)
-
 
 def test_dictionary(zhtok):
     """
@@ -177,7 +191,7 @@ def test_dictionary_feats(zhtok):
     batches = DataLoader(zhtok.config, input_text=raw_text, vocab=zhtok.vocab, evaluation=True, dictionary=zhtok.trainer.dictionary)
     data = batches.data
     assert len(data) == 1
-    assert len(data[0]) == 6
+    assert len(data[0][0]) == 6
 
     expected_features = [
         # in our example, the 2-grams made by the one character words at the start
@@ -191,5 +205,5 @@ def test_dictionary_feats(zhtok):
     ]
 
     for i, expected in enumerate(expected_features):
-        dict_features = batches.extract_dict_feat(data[0], i)
+        dict_features = batches.extract_dict_feat(data[0][0], i)
         assert dict_features == expected
