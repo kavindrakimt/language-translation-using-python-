@@ -336,11 +336,9 @@ def build_trainer(args, train_treebanks, dev_treebanks, pt, forward_charlm, back
 
     if trainer is None:
         optimizer = build_optimizer(args, models)
-
-        models = OrderedDict([("default", model)])
         trainer = Trainer(args, models, optimizer)
 
-    return trainer, train_sequences, train_transitions
+    return trainer, all_train_sequences, all_train_transitions
 
 def remove_duplicates(trees, dataset):
     """
@@ -470,7 +468,7 @@ def train(args, model_save_file, model_load_file, model_save_latest_file, retag_
 
         trainer, train_sequences, train_transitions = build_trainer(args, train_treebanks, dev_treebanks, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer)
 
-        iterate_training(trainer, train_treebankss, train_sequences, train_transitions, dev_treebankss, args, model_save_file, model_save_latest_file, evaluator)
+        iterate_training(trainer, train_treebanks, train_sequences, train_transitions, dev_treebanks, args, model_save_file, model_save_latest_file, evaluator)
 
     if args['wandb']:
         wandb.finish()
