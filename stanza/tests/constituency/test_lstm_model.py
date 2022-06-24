@@ -278,11 +278,11 @@ def check_structure_test(pretrain_file, args1, args2):
     # now, check that applying one transition to an initial state
     # results in the same values in the output states for both models
     # as the pattn layer inputs are 0, the output values should be equal
-    shift = [parse_transitions.Shift()]
-    model_states = test_parse_transitions.build_initial_state(model, 1)
+    shift = [parse_transitions.Shift(), parse_transitions.Shift()]
+    model_states = test_parse_transitions.build_initial_state(model, 2)
     model_states = parse_transitions.bulk_apply(model, model_states, shift)
 
-    other_states = test_parse_transitions.build_initial_state(other, 1)
+    other_states = test_parse_transitions.build_initial_state(other, 2)
     other_states = parse_transitions.bulk_apply(other, other_states, shift)
 
     for i, j in zip(other_states[0].word_queue, model_states[0].word_queue):

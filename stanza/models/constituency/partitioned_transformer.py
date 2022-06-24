@@ -195,6 +195,7 @@ class PartitionedTransformerEncoder(nn.Module):
                  activation=PartitionedReLU,
     ):
         super().__init__()
+        self.mix_layer_linear = nn.Linear(n_layers, 1, False)
         self.layers = nn.ModuleList([PartitionedTransformerEncoderLayer(d_model=d_model,
                                                                         n_head=n_head,
                                                                         d_qkv=d_qkv,
@@ -206,8 +207,12 @@ class PartitionedTransformerEncoder(nn.Module):
                                      for i in range(n_layers)])
 
     def forward(self, x, mask=None):
+        intermediates = []
         for layer in self.layers:
             x = layer(x, mask=mask)
+            intermediates.append(x)
+        intermediate = torch.stack(intermediates, axis=3)
+        x = self.mix_layer_linear(intermediate).squeeze(dim=3)
         return x
 
 
