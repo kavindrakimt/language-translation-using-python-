@@ -13,6 +13,8 @@ import torch.nn.functional as F
 
 from stanza.models.constituency.positional_encoding import ConcatSinusoidalEncoding
 
+LAYER_MIX_BIAS = 0.1
+
 class FeatureDropoutFunction(torch.autograd.function.InplaceFunction):
     @staticmethod
     def forward(ctx, input, p=0.5, train=False, inplace=False):
@@ -195,7 +197,7 @@ class PartitionedTransformerEncoder(nn.Module):
                  activation=PartitionedReLU,
     ):
         super().__init__()
-        self.mix_layer_linear = nn.Linear(n_layers, 1, False)
+        self.layer_mix_linear = nn.Linear(n_layers, 1, False)
         self.layers = nn.ModuleList([PartitionedTransformerEncoderLayer(d_model=d_model,
                                                                         n_head=n_head,
                                                                         d_qkv=d_qkv,
@@ -212,7 +214,8 @@ class PartitionedTransformerEncoder(nn.Module):
             x = layer(x, mask=mask)
             intermediates.append(x)
         intermediate = torch.stack(intermediates, axis=3)
-        x = self.mix_layer_linear(intermediate).squeeze(dim=3)
+        # the bias is to fight against regularization
+        x = self.layer_mix_linear(intermediate).squeeze(dim=3) + torch.sum(torch.stack(intermediates, axis=3), dim=3) * LAYER_MIX_BIAS
         return x
 
 
