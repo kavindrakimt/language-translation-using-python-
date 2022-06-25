@@ -427,6 +427,8 @@ class LSTMModel(BaseModel, nn.Module):
         This will rebuild the model in such a way that the outputs will be
         exactly the same as the previous model.
         """
+        transitions_died = (torch.linalg.norm(other.transition_start_embedding).item() < 1e-08 and
+                            torch.linalg.norm(other.transition_embedding.weight).item() < 1e-08)
         for name, other_parameter in other.named_parameters():
             if name.startswith('word_lstm.weight_ih_l0'):
                 # bottom layer shape may have changed from adding a new pattn / lattn block
@@ -435,6 +437,17 @@ class LSTMModel(BaseModel, nn.Module):
                 #new_values = my_parameter.data.clone().detach()
                 new_values = torch.zeros_like(my_parameter.data)
                 new_values[:, :copy_size] = other_parameter.data[:, :copy_size]
+                my_parameter.data.copy_(new_values)
+            elif transitions_died and name.startswith('transition_'):
+                # keep our new random layers
+                # the output layer will be zeroed for the transitions
+                # ... it probably already is zero, if this happened
+                continue
+            elif transitions_died and name == 'output_layers.0.weight':
+                my_parameter = self.get_parameter(name)
+                new_values = torch.zeros_like(my_parameter.data)
+                new_values[:, :self.hidden_size] = other_parameter.data[:, :self.hidden_size]
+                new_values[:, -self.hidden_size:] = other_parameter.data[:, -self.hidden_size:]
                 my_parameter.data.copy_(new_values)
             else:
                 self.get_parameter(name).data.copy_(other_parameter.data)
