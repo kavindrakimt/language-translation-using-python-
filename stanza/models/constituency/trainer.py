@@ -471,6 +471,26 @@ class EpochStats(namedtuple("EpochStats", ['epoch_loss', 'transitions_correct', 
         epoch_loss = self.epoch_loss + other.epoch_loss
         return EpochStats(epoch_loss, transitions_correct, transitions_incorrect, repairs_used, fake_transitions_used)
 
+def build_multistage_splits(args):
+    multistage_splits = {}
+    first_split = args['epochs'] // 2
+    uses_lattn = LSTMModel.uses_lattn(args)
+    uses_pattn = LSTMModel.uses_pattn(args)
+    if not uses_pattn:
+        multistage_splits[first_split] = (0, uses_lattn)
+        return multistage_splits
+
+    last_split = args['epochs'] * 3 // 4
+    for num_layers in range(1, args['pattn_num_layers']):
+        epoch = (last_split - first_split) * (num_layers - 1) // (args['pattn_num_layers'] - 1) + first_split
+        multistage_splits[epoch] = (num_layers, False)
+
+    if args['pattn_num_layers'] == 1:
+        multistage_splits[first_split] = (1, False)
+
+    if args['pattn_num_layers'] > 1 or uses_lattn:
+        multistage_splits[last_split] = (args['pattn_num_layers'], uses_lattn)
+    return multistage_splits
 
 def iterate_training(args, trainer, train_trees, train_sequences, transitions, dev_trees, foundation_cache, model_filename, model_latest_filename, model_save_each_filename, evaluator):
     """
@@ -512,11 +532,10 @@ def iterate_training(args, trainer, train_trees, train_sequences, transitions, d
         args['epoch_size'] = len(train_data)
 
     if args['multistage']:
-        multistage_splits = {}
-        # if we're halfway, only do pattn.  save lattn for next time
-        multistage_splits[args['epochs'] // 2] = (args['pattn_num_layers'], False)
-        if LSTMModel.uses_lattn(args):
-            multistage_splits[args['epochs'] * 3 // 4] = (args['pattn_num_layers'], True)
+        multistage_splits = build_multistage_splits(args)
+        descriptions = ["%4d: %2d pattn layers, lattn %s" % (epoch, multistage_splits[epoch][0], multistage_splits[epoch][1])
+                        for epoch in sorted(multistage_splits.keys())]
+        logger.info("Running multistage training... first stage uses AdaDelta, others use %s\n%s", args['optim'], "\n".join(descriptions))
 
     leftover_training_data = []
     best_f1 = 0.0

@@ -52,6 +52,28 @@ TREEBANK = """
     (. .)))
 """
 
+def test_multistage_splits():
+    def fake_args(pattn_num_layers, use_lattn, epochs):
+        args = ['--pattn_num_layers', "%d" % pattn_num_layers, '--epochs', '%d' % epochs]
+        if not use_lattn:
+            args.extend(['--lattn_d_proj', '0'])
+
+        return constituency_parser.parse_args(args)
+
+    def check_results(pattn_num_layers, use_lattn, epochs, expected):
+        args = fake_args(pattn_num_layers, use_lattn, epochs)
+        results = trainer.build_multistage_splits(args)
+        if expected is None:
+            print(results)
+        else:
+            assert results == expected
+
+    check_results(0, False,  12, {6: (0, False)})
+    check_results(1, False,  12, {6: (1, False)})
+    check_results(1,  True,  12, {6: (1, False), 9: (1, True)})
+    check_results(4,  True,  12, {6: (1, False), 7: (2, False), 8: (3, False), 9: (4, True)})
+    check_results(8,  True, 250, expected = None)
+
 def build_trainer(wordvec_pretrain_file, *args, treebank=TREEBANK):
     # TODO: build a fake embedding some other way?
     train_trees = tree_reader.read_trees(treebank)
