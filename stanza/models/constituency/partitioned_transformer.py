@@ -214,8 +214,8 @@ class PartitionedTransformerEncoder(nn.Module):
             x = layer(x, mask=mask)
             intermediates.append(x)
         intermediate = torch.stack(intermediates, axis=3)
-        # the bias is to fight against regularization
-        x = self.layer_mix_linear(intermediate).squeeze(dim=3) + torch.sum(torch.stack(intermediates, axis=3), dim=3) * LAYER_MIX_BIAS
+        weight = self.layer_mix_linear.weight.squeeze(0) + LAYER_MIX_BIAS
+        x = torch.matmul(intermediate, weight)
         return x
 
 

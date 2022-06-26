@@ -43,7 +43,7 @@ from stanza.models.constituency.base_model import BaseModel
 from stanza.models.constituency.label_attention import LabelAttentionModule
 from stanza.models.constituency.parse_transitions import TransitionScheme
 from stanza.models.constituency.parse_tree import Tree
-from stanza.models.constituency.partitioned_transformer import PartitionedTransformerModule
+from stanza.models.constituency.partitioned_transformer import PartitionedTransformerModule, LAYER_MIX_BIAS
 from stanza.models.constituency.tree_stack import TreeStack
 from stanza.models.constituency.utils import build_nonlinearity, initialize_linear, TextTooLongError
 
@@ -434,6 +434,14 @@ class LSTMModel(BaseModel, nn.Module):
                 copy_size = min(other_parameter.data.shape[1], my_parameter.data.shape[1])
                 #new_values = my_parameter.data.clone().detach()
                 new_values = torch.zeros_like(my_parameter.data)
+                new_values[:, :copy_size] = other_parameter.data[:, :copy_size]
+                my_parameter.data.copy_(new_values)
+            elif name == 'partitioned_transformer_module.pattn_encoder.layer_mix_linear.weight':
+                # TODO will barf if not using pattn...
+                my_parameter = self.get_parameter(name)
+                copy_size = min(other_parameter.data.shape[1], my_parameter.data.shape[1])
+                new_values = torch.zeros_like(my_parameter.data)
+                nn.init.constant_(new_values, -LAYER_MIX_BIAS)
                 new_values[:, :copy_size] = other_parameter.data[:, :copy_size]
                 my_parameter.data.copy_(new_values)
             else:

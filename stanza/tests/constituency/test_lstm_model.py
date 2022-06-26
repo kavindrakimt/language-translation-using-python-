@@ -301,6 +301,11 @@ def test_copy_with_new_structure_pattn(pretrain_file):
                          ['--pattn_num_layers', '0', '--lattn_d_proj', '0', '--hidden_size', '20', '--delta_embedding_dim', '10'],
                          ['--pattn_num_layers', '1', '--lattn_d_proj', '0', '--hidden_size', '20', '--delta_embedding_dim', '10', '--pattn_d_model', '20', '--pattn_num_heads', '2'])
 
+def test_copy_with_new_structure_more_pattn(pretrain_file):
+    check_structure_test(pretrain_file,
+                         ['--pattn_num_layers', '2', '--lattn_d_proj', '0', '--hidden_size', '20', '--delta_embedding_dim', '10', '--pattn_d_model', '20', '--pattn_num_heads', '2'],
+                         ['--pattn_num_layers', '4', '--lattn_d_proj', '0', '--hidden_size', '20', '--delta_embedding_dim', '10', '--pattn_d_model', '20', '--pattn_num_heads', '2'])
+
 def test_copy_with_new_structure_both(pretrain_file):
     check_structure_test(pretrain_file,
                          ['--pattn_num_layers', '0', '--lattn_d_proj',  '0', '--hidden_size', '20', '--delta_embedding_dim', '10'],
