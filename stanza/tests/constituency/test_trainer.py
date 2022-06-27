@@ -71,8 +71,8 @@ def test_multistage_splits():
     check_results(0, False,  12, {6: (0, False)})
     check_results(1, False,  12, {6: (1, False)})
     check_results(1,  True,  12, {6: (1, False), 9: (1, True)})
-    check_results(4,  True,  12, {6: (1, False), 7: (2, False), 8: (3, False), 9: (4, True)})
-    check_results(8,  True, 250, expected = None)
+    check_results(3,  True,  12, {6: (1, False), 7: (2, False), 8: (3, False), 10: (3, True)})
+    check_results(8,  True, 250, {125: (1, False), 136: (2, False), 147: (3, False), 159: (4, False), 170: (5, False), 181: (6, False), 193: (7, False), 204: (8, False), 227: (8, True)})
 
 def build_trainer(wordvec_pretrain_file, *args, treebank=TREEBANK):
     # TODO: build a fake embedding some other way?

@@ -480,16 +480,19 @@ def build_multistage_splits(args):
         multistage_splits[first_split] = (0, uses_lattn)
         return multistage_splits
 
-    last_split = args['epochs'] * 3 // 4
-    for num_layers in range(1, args['pattn_num_layers']):
-        epoch = (last_split - first_split) * (num_layers - 1) // (args['pattn_num_layers'] - 1) + first_split
-        multistage_splits[epoch] = (num_layers, False)
+    steps = args['pattn_num_layers'] + 1
+    if uses_lattn:
+        last_split = (args['epochs'] - first_split) * steps // (steps + 2) + first_split
+    else:
+        last_split = args['epochs']
 
-    if args['pattn_num_layers'] == 1:
-        multistage_splits[first_split] = (1, False)
+    for i in range(args['pattn_num_layers']):
+        epoch = (last_split - first_split) * i // steps + first_split
+        multistage_splits[epoch] = (i+1, False)
 
-    if args['pattn_num_layers'] > 1 or uses_lattn:
-        multistage_splits[last_split] = (args['pattn_num_layers'], uses_lattn)
+    if uses_lattn:
+        multistage_splits[last_split] = (args['pattn_num_layers'], True)
+
     return multistage_splits
 
 def iterate_training(args, trainer, train_trees, train_sequences, transitions, dev_trees, foundation_cache, model_filename, model_latest_filename, model_save_each_filename, evaluator):
