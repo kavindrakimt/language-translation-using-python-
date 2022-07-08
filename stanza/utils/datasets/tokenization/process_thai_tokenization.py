@@ -35,9 +35,9 @@ def write_section(output_dir, dataset_name, section, documents):
                         label_out.write("2")
                     else:
                         label_out.write("1")
-                    if word[1] and (sentence_idx != len(paragraph) - 1 or word_idx != len(sentence) - 1):
+                    if word[1]:
                         text_out.write(' ')
-                        label_out.write('0')
+                        label_out.write('1')
 
             text_out.write("\n\n")
             label_out.write("\n\n")
@@ -49,14 +49,10 @@ def write_section(output_dir, dataset_name, section, documents):
         for document in documents:
             for paragraph in document:
                 new_par = True
-                for sentence in paragraph:
+                for sentence_idx, sentence in enumerate(paragraph):
+                    word_pos = 0
                     for word_idx, word in enumerate(sentence):
-                        # SpaceAfter is left blank if there is space after the word
-                        if word[1] and new_par:
-                            space = 'NewPar=Yes'
-                        elif word[1]:
-                            space = '_'
-                        elif new_par:
+                        if new_par:
                             space = 'SpaceAfter=No|NewPar=Yes'
                         else:
                             space = 'SpaceAfter=No'
@@ -64,8 +60,15 @@ def write_section(output_dir, dataset_name, section, documents):
 
                         # Note the faked dependency structure: the conll reading code
                         # needs it even if it isn't being used in any way
-                        fake_dep = 'root' if word_idx == 0 else 'dep'
-                        fout.write('{}\t{}\t_\t_\t_\t_\t{}\t{}\t{}:{}\t{}\n'.format(word_idx+1, word[0], word_idx, fake_dep, word_idx, fake_dep, space))
+                        fake_dep = 'root' if word_pos == 0 else 'dep'
+                        fout.write('{}\t{}\t_\t_\t_\t_\t{}\t{}\t{}:{}\t{}\n'.format(word_pos+1, word[0], word_pos, fake_dep, word_pos, fake_dep, space))
+                        word_pos = word_pos + 1
+
+                        if word[1]:
+                            space = 'SpaceAfter=No'
+                            fake_dep = 'dep'
+                            fout.write('{}\t \t_\t_\t_\t_\t{}\t{}\t{}:{}\t{}\n'.format(word_pos+1, word_pos, fake_dep, word_pos, fake_dep, space))
+                            word_pos = word_pos + 1
                     fout.write('\n')
 
 def write_dataset(documents, output_dir, dataset_name):
